@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0a0a0d" />
-  <title>CBSE 10 Tracker — Syllabus, Planner, Revision & Exam Readiness</title>
+  <title>CBSE 10 Tracker — Syllabus, Planner, Sync & Exam Readiness</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -16,9 +16,7 @@
             ink: { 950:'#0a0a0d', 900:'#0e0e12', 850:'#121217', 800:'#17171d', 700:'#22222b', 600:'#2e2e3a' },
             violet: { 400:'#a78bfa', 500:'#8b5cf6', 600:'#7c3aed' },
           },
-          boxShadow: {
-            glow: '0 0 0 1px rgba(139,92,246,.18), 0 20px 60px -20px rgba(139,92,246,.28)',
-          },
+          boxShadow: { glow: '0 0 0 1px rgba(139,92,246,.18), 0 20px 60px -20px rgba(139,92,246,.28)' },
         },
       },
     };
@@ -384,10 +382,10 @@
       if (!ch.status.examReady) return 'practice';
       return 'test';
     }
-    function missionTitleForChapter(ch, reason) {
+    function missionTitleForChapter(ch) {
       const base = ch.name;
       const type = missionTypeForChapter(ch);
-      if (type === 'study') return reason ? `Study: ${base}` : `Study: ${base}`;
+      if (type === 'study') return `Study: ${base}`;
       if (type === 'revise') return `Revise: ${base}`;
       if (type === 'notes') return `Complete notes: ${base}`;
       if (type === 'practice') return `Practice problems: ${base}`;
@@ -396,51 +394,27 @@
 
     function generateMissions(inputs, chapters, nextMissionChapter) {
       const { availableMinutes, energy, schoolTopics, homework, pendingTasks, homeStudy } = inputs;
-
-      // Target missions 3–5 based on time available
       let targetCount = 3;
       if (availableMinutes >= 90) targetCount = 4;
       if (availableMinutes >= 150) targetCount = 5;
-
-      // Base session length by energy
-      const baseDuration =
-        energy === 'low' ? 15 :
-        energy === 'medium' ? 25 : 40;
-
+      const baseDuration = energy === 'low' ? 15 : energy === 'medium' ? 25 : 40;
       const maxTotal = Math.max(30, availableMinutes * 0.92);
       const missions = [];
       const usedChapters = new Set();
       const homeLower = (homeStudy || '').toLowerCase();
 
-      // 1. Homework
       if (homework && homework.trim()) {
-        const tasks = homework.split(/[,\n;]/).map(t => t.trim()).filter(Boolean);
-        tasks.slice(0, 2).forEach(task => {
+        homework.split(/[,\n;]/).map(t => t.trim()).filter(Boolean).slice(0, 2).forEach(task => {
           if (missions.length >= targetCount) return;
-          missions.push({
-            type: 'homework',
-            title: 'Complete homework',
-            detail: task,
-            duration: Math.min(baseDuration, Math.floor(availableMinutes * 0.3)),
-          });
+          missions.push({ type: 'homework', title: 'Complete homework', detail: task, duration: Math.min(baseDuration, Math.floor(availableMinutes * 0.3)) });
         });
       }
-
-      // 2. Pending tasks
       if (pendingTasks && pendingTasks.trim()) {
-        const tasks = pendingTasks.split(/[,\n;]/).map(t => t.trim()).filter(Boolean);
-        tasks.slice(0, 2).forEach(task => {
+        pendingTasks.split(/[,\n;]/).map(t => t.trim()).filter(Boolean).slice(0, 2).forEach(task => {
           if (missions.length >= targetCount) return;
-          missions.push({
-            type: 'pending',
-            title: 'Clear a pending task',
-            detail: task,
-            duration: baseDuration,
-          });
+          missions.push({ type: 'pending', title: 'Clear a pending task', detail: task, duration: baseDuration });
         });
       }
-
-      // 3. From today's school topics — fuzzy match chapters
       if (schoolTopics && schoolTopics.trim()) {
         const sLower = schoolTopics.toLowerCase();
         chapters.forEach(ch => {
@@ -448,116 +422,47 @@
           const matchesName = sLower.includes(ch.name.toLowerCase());
           const matchesTopic = ch.topics.some(t => t && sLower.includes(t.toLowerCase()));
           if (matchesName || matchesTopic) {
-            // Skip if user already studied this at home today
-            if (homeLower && (homeLower.includes(ch.name.toLowerCase()) ||
-                ch.topics.some(t => t && homeLower.includes(t.toLowerCase())))) {
-              return;
-            }
+            if (homeLower && (homeLower.includes(ch.name.toLowerCase()) || ch.topics.some(t => t && homeLower.includes(t.toLowerCase())))) return;
             usedChapters.add(ch.id);
-            const type = missionTypeForChapter(ch);
-            missions.push({
-              type,
-              title: missionTitleForChapter(ch),
-              detail: 'Covered in school today',
-              duration: baseDuration + 5,
-              chapterId: ch.id,
-            });
+            missions.push({ type: missionTypeForChapter(ch), title: missionTitleForChapter(ch), detail: 'Covered in school today', duration: baseDuration + 5, chapterId: ch.id });
           }
         });
       }
-
-      // 4. Next mission chapter
       if (nextMissionChapter && !usedChapters.has(nextMissionChapter.id) && missions.length < targetCount) {
         usedChapters.add(nextMissionChapter.id);
-        missions.push({
-          type: missionTypeForChapter(nextMissionChapter),
-          title: missionTitleForChapter(nextMissionChapter),
-          detail: 'Priority chapter from your tracker',
-          duration: baseDuration + 10,
-          chapterId: nextMissionChapter.id,
-        });
+        missions.push({ type: missionTypeForChapter(nextMissionChapter), title: missionTitleForChapter(nextMissionChapter), detail: 'Priority chapter from your tracker', duration: baseDuration + 10, chapterId: nextMissionChapter.id });
       }
-
-      // 5. Weak chapters (unresolved mistakes)
-      chapters
-        .filter(c => c.mistakes && !c.mistakesResolved && !usedChapters.has(c.id))
-        .slice(0, 2)
-        .forEach(c => {
-          if (missions.length >= targetCount) return;
-          usedChapters.add(c.id);
-          missions.push({
-            type: 'mistake-review',
-            title: `Review mistakes: ${c.name}`,
-            detail: 'Unresolved weak areas',
-            duration: Math.min(baseDuration, 20),
-            chapterId: c.id,
-          });
-        });
-
-      // 6. Studied but not revised
-      chapters
-        .filter(c => c.status.studied && !c.status.revised && !usedChapters.has(c.id))
-        .sort((a, b) => b.weightage - a.weightage)
-        .slice(0, 2)
-        .forEach(c => {
-          if (missions.length >= targetCount) return;
-          usedChapters.add(c.id);
-          missions.push({
-            type: 'revise',
-            title: `Revise: ${c.name}`,
-            detail: 'Studied once, needs a revision pass',
-            duration: baseDuration,
-            chapterId: c.id,
-          });
-        });
-
-      // 7. Not yet studied
-      chapters
-        .filter(c => !c.status.studied && !usedChapters.has(c.id))
-        .sort((a, b) => b.weightage - a.weightage)
-        .slice(0, 2)
-        .forEach(c => {
-          if (missions.length >= targetCount) return;
-          usedChapters.add(c.id);
-          missions.push({
-            type: 'study',
-            title: `Study: ${c.name}`,
-            detail: 'Not yet started',
-            duration: baseDuration + 5,
-            chapterId: c.id,
-          });
-        });
-
-      // 8. Fill with generic missions
+      chapters.filter(c => c.mistakes && !c.mistakesResolved && !usedChapters.has(c.id)).slice(0, 2).forEach(c => {
+        if (missions.length >= targetCount) return;
+        usedChapters.add(c.id);
+        missions.push({ type: 'mistake-review', title: `Review mistakes: ${c.name}`, detail: 'Unresolved weak areas', duration: Math.min(baseDuration, 20), chapterId: c.id });
+      });
+      chapters.filter(c => c.status.studied && !c.status.revised && !usedChapters.has(c.id)).sort((a, b) => b.weightage - a.weightage).slice(0, 2).forEach(c => {
+        if (missions.length >= targetCount) return;
+        usedChapters.add(c.id);
+        missions.push({ type: 'revise', title: `Revise: ${c.name}`, detail: 'Studied once, needs a revision pass', duration: baseDuration, chapterId: c.id });
+      });
+      chapters.filter(c => !c.status.studied && !usedChapters.has(c.id)).sort((a, b) => b.weightage - a.weightage).slice(0, 2).forEach(c => {
+        if (missions.length >= targetCount) return;
+        usedChapters.add(c.id);
+        missions.push({ type: 'study', title: `Study: ${c.name}`, detail: 'Not yet started', duration: baseDuration + 5, chapterId: c.id });
+      });
       const genericPool = [
         { type: 'quick-revision', title: "Quick revision of today's topics", detail: 'Reinforce what you learned', duration: 15 },
         { type: 'practice',        title: 'Solve 5 previous-year questions',  detail: 'Exam pattern practice',      duration: 20 },
         { type: 'notes',           title: 'Update a pending notebook',        detail: 'Keep your copy up to date',   duration: 15 },
         { type: 'quick-revision',  title: 'Read ahead for tomorrow',          detail: "Prepare for tomorrow's class", duration: 15 },
       ];
-      for (const g of genericPool) {
-        if (missions.length >= targetCount) break;
-        missions.push({ ...g });
-      }
-      while (missions.length < 3) {
-        missions.push({ type: 'quick-revision', title: 'Quick mixed revision', detail: 'Review your notes', duration: 15 });
-      }
+      for (const g of genericPool) { if (missions.length >= targetCount) break; missions.push({ ...g }); }
+      while (missions.length < 3) missions.push({ type: 'quick-revision', title: 'Quick mixed revision', detail: 'Review your notes', duration: 15 });
 
-      // Trim + scale to fit available time
       const finalMissions = missions.slice(0, targetCount);
       const totalDur = finalMissions.reduce((s, m) => s + m.duration, 0);
       if (totalDur > maxTotal) {
         const scale = maxTotal / totalDur;
         finalMissions.forEach(m => { m.duration = Math.max(10, Math.round(m.duration * scale)); });
       }
-
-      return finalMissions.map((m, i) => ({
-        ...m,
-        id: uid(),
-        order: i,
-        done: false,
-        notes: '',
-      }));
+      return finalMissions.map((m, i) => ({ ...m, id: uid(), order: i, done: false, notes: '' }));
     }
 
     function getTodayPlan(state) {
@@ -568,6 +473,8 @@
        4. STORAGE
     ============================================================ */
     const STORAGE_KEY = 'cbse10-tracker-single-v2';
+    const SYNC_CONFIG_KEY = 'cbse10-sync-config';
+
     const emptyStatus = () => ({ studied: false, copy: false, revised: false, examReady: false, complete: false });
 
     function createInitialState() {
@@ -588,6 +495,7 @@
       });
       return {
         version: 1,
+        lastModified: new Date().toISOString(),
         chapters,
         streak: { current: 0, longest: 0, lastStudyDate: null, studyDates: [] },
         mission: null,
@@ -641,6 +549,7 @@
       const streak = candidate.streak || fallback.streak;
       return {
         version: 1,
+        lastModified: typeof candidate.lastModified === 'string' ? candidate.lastModified : new Date().toISOString(),
         chapters,
         streak: {
           current: typeof streak.current === 'number' && streak.current >= 0 ? streak.current : 0,
@@ -661,7 +570,6 @@
 
     function loadState() {
       try {
-        // Try new key first, then fall back to old key (migration)
         let raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) raw = localStorage.getItem('cbse10-tracker-single-v1');
         if (!raw) return createInitialState();
@@ -680,6 +588,45 @@
       a.download = `cbse10-tracker-${toLocalDateString()}.json`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+    }
+
+    /* ============================================================
+       4b. CLOUD SYNC HELPERS
+    ============================================================ */
+    function loadSyncConfig() {
+      try {
+        return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY)) || { url: '', key: '', enabled: false, lastSync: null };
+      } catch { return { url: '', key: '', enabled: false, lastSync: null }; }
+    }
+    function saveSyncConfig(config) {
+      try { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(config)); } catch {}
+    }
+
+    function jsonpGet(url) {
+      return new Promise((resolve, reject) => {
+        const cb = 'jsonp_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const script = document.createElement('script');
+        const timer = setTimeout(() => { cleanup(); reject(new Error('Sync timeout')); }, 20000);
+        function cleanup() {
+          clearTimeout(timer);
+          delete window[cb];
+          if (script.parentNode) script.remove();
+        }
+        window[cb] = (data) => { cleanup(); resolve(data); };
+        script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb + '&t=' + Date.now();
+        script.onerror = () => { cleanup(); reject(new Error('Sync network error')); };
+        document.body.appendChild(script);
+      });
+    }
+
+    async function cloudPost(config, state) {
+      const body = JSON.stringify({ key: config.key, state });
+      await fetch(config.url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body,
+      });
     }
 
     /* ============================================================
@@ -720,10 +667,8 @@
       scroll: "M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4",
       monitor: "M8 2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-4 M8 22h8 M12 18v4",
       sun: "M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0 M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41",
-      list: "M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01",
-      zap: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
-      bookmark: "M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z",
-      compass: "M12 12m-10 0a10 10 0 1 0 20 0a10 10 0 1 0 -20 0 M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z",
+      cloud: "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z",
+      cloudOff: "M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3 M1 1l22 22",
     };
 
     function Icon({ name, size = 18, className = '' }) {
@@ -850,7 +795,7 @@
     /* ============================================================
        7. APP COMPONENTS
     ============================================================ */
-    function Sidebar({ state, view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen }) {
+    function Sidebar({ state, view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen, syncConfig, syncStatus }) {
       const chapters = state.chapters;
       const stats = overallStats(chapters);
       const todayPlan = getTodayPlan(state);
@@ -864,6 +809,8 @@
         { view: 'revisions', label: 'Revision Log', icon: 'sparkles' },
         { view: 'settings',  label: 'Settings', icon: 'settings' },
       ];
+
+      const syncTone = syncStatus === 'synced' ? 'text-emerald-400' : syncStatus === 'syncing' ? 'text-amber-400' : syncStatus === 'error' ? 'text-rose-400' : 'text-zinc-600';
 
       const content = (
         <div className="flex h-full flex-col">
@@ -933,7 +880,11 @@
             })}
           </nav>
 
-          <div className="border-t border-white/10 p-3">
+          <div className="space-y-2 border-t border-white/10 p-3">
+            <div className={cn('flex items-center gap-2 px-1 text-[10px]', collapsed && 'justify-center')}>
+              <Icon name={syncConfig.enabled ? 'cloud' : 'cloudOff'} size={12} className={syncTone} />
+              {!collapsed && <span className={syncTone}>{syncConfig.enabled ? (syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error' : 'Cloud synced') : 'Local only'}</span>}
+            </div>
             <button onClick={() => setCollapsed(!collapsed)}
               className="hidden w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-[11px] text-zinc-500 transition hover:bg-white/[0.04] lg:flex">
               <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
@@ -990,7 +941,6 @@
             </div>
           </div>
 
-          {/* Today's plan card */}
           {todayPlan && todayPlan.missions && todayPlan.missions.length > 0 && (
             <button onClick={() => setView('planner')}
               className="group flex w-full items-center gap-4 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/[0.08] to-ink-850 p-4 text-left transition hover:border-violet-500/40">
@@ -1136,22 +1086,14 @@
 
       const [showForm, setShowForm] = useState(!dayPlan);
       const [inputs, setInputs] = useState(() => (dayPlan && dayPlan.inputs) || {
-        schoolTopics: '',
-        homework: '',
-        homeStudy: '',
-        pendingTasks: '',
-        availableMinutes: 90,
-        energy: 'medium',
+        schoolTopics: '', homework: '', homeStudy: '', pendingTasks: '', availableMinutes: 90, energy: 'medium',
       });
       const [reflection, setReflection] = useState(dayPlan && dayPlan.report ? dayPlan.report.reflection : '');
 
       const updateInput = (key, value) => setInputs(prev => ({ ...prev, [key]: value }));
 
       const savePlan = (plan) => {
-        setState(prev => ({
-          ...prev,
-          planner: { ...(prev.planner || {}), [today]: plan },
-        }));
+        setState(prev => ({ ...prev, planner: { ...(prev.planner || {}), [today]: plan } }));
       };
 
       const generate = () => {
@@ -1159,19 +1101,16 @@
         savePlan({ inputs, missions, report: null, savedAt: new Date().toISOString() });
         setShowForm(false);
       };
-
       const regenerate = () => {
         if (!window.confirm("Regenerate today's plan? Your current mission progress will be cleared.")) return;
         const missions = generateMissions(inputs, chapters, nextRec ? nextRec.chapter : null);
         savePlan({ inputs, missions, report: null, savedAt: new Date().toISOString() });
       };
-
       const toggleMission = (id) => {
         if (!dayPlan) return;
         const updatedMissions = dayPlan.missions.map(m => m.id === id ? { ...m, done: !m.done } : m);
         savePlan({ ...dayPlan, missions: updatedMissions });
       };
-
       const saveReport = () => {
         if (!dayPlan) return;
         const completed = dayPlan.missions.filter(m => m.done);
@@ -1185,13 +1124,11 @@
         savePlan({ ...dayPlan, report });
       };
 
-      // Missions summary
       const missions = dayPlan ? dayPlan.missions : [];
       const doneCount = missions.filter(m => m.done).length;
       const totalMin = missions.filter(m => m.done).reduce((s, m) => s + m.duration, 0);
       const progressPct = missions.length ? (doneCount / missions.length) * 100 : 0;
 
-      // Recent plans (last 5 days, excluding today)
       const recentDays = Object.keys(state.planner || {})
         .filter(d => d !== today)
         .sort()
@@ -1200,7 +1137,6 @@
 
       return (
         <div className="space-y-5 animate-in">
-          {/* Header */}
           <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-ink-850 p-5">
             <div className="flex items-start gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300">
@@ -1218,14 +1154,9 @@
                 </p>
               </div>
             </div>
-            {missions.length > 0 && (
-              <div className="mt-4">
-                <ProgressBar value={progressPct} height="h-2" />
-              </div>
-            )}
+            {missions.length > 0 && <div className="mt-4"><ProgressBar value={progressPct} height="h-2" /></div>}
           </div>
 
-          {/* Inputs card */}
           <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
             <button onClick={() => setShowForm(s => !s)} className="flex w-full items-center justify-between text-left">
               <div>
@@ -1234,80 +1165,55 @@
               </div>
               <Icon name={showForm ? 'chevronLeft' : 'chevronRight'} size={16} className="text-zinc-500" />
             </button>
-
             {showForm && (
               <div className="mt-4 space-y-3">
                 <Field label="What was taught in school today?">
-                  <textarea rows={2} value={inputs.schoolTopics} onChange={e => updateInput('schoolTopics', e.target.value)}
-                    className={inputClass} placeholder="e.g. Quadratic Equations, Acids and Bases, Federalism…" />
+                  <textarea rows={2} value={inputs.schoolTopics} onChange={e => updateInput('schoolTopics', e.target.value)} className={inputClass} placeholder="e.g. Quadratic Equations, Acids and Bases, Federalism…" />
                 </Field>
                 <Field label="Homework assigned">
-                  <textarea rows={2} value={inputs.homework} onChange={e => updateInput('homework', e.target.value)}
-                    className={inputClass} placeholder="One task per line" />
+                  <textarea rows={2} value={inputs.homework} onChange={e => updateInput('homework', e.target.value)} className={inputClass} placeholder="One task per line" />
                 </Field>
                 <Field label="Already studied at home today (optional)">
-                  <textarea rows={2} value={inputs.homeStudy} onChange={e => updateInput('homeStudy', e.target.value)}
-                    className={inputClass} placeholder="e.g. Revised Trigonometry formulas" />
+                  <textarea rows={2} value={inputs.homeStudy} onChange={e => updateInput('homeStudy', e.target.value)} className={inputClass} placeholder="e.g. Revised Trigonometry formulas" />
                 </Field>
                 <Field label="Pending tasks from previous days">
-                  <textarea rows={2} value={inputs.pendingTasks} onChange={e => updateInput('pendingTasks', e.target.value)}
-                    className={inputClass} placeholder="One task per line" />
+                  <textarea rows={2} value={inputs.pendingTasks} onChange={e => updateInput('pendingTasks', e.target.value)} className={inputClass} placeholder="One task per line" />
                 </Field>
-
                 <Field label="Available study time">
                   <div className="flex flex-wrap gap-2">
                     {[30, 45, 60, 90, 120, 180].map(min => (
                       <button key={min} type="button" onClick={() => updateInput('availableMinutes', min)}
-                        className={cn(
-                          'rounded-xl border px-3 py-2 text-xs font-medium transition',
-                          inputs.availableMinutes === min
-                            ? 'border-violet-500/40 bg-violet-500/15 text-violet-200'
-                            : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]'
-                        )}>
+                        className={cn('rounded-xl border px-3 py-2 text-xs font-medium transition',
+                          inputs.availableMinutes === min ? 'border-violet-500/40 bg-violet-500/15 text-violet-200' : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]')}>
                         {min >= 60 ? `${min / 60}h` : `${min}m`}
                       </button>
                     ))}
                   </div>
                 </Field>
-
                 <Field label="Energy level">
                   <div className="flex flex-wrap gap-2">
-                    {[
-                      { key: 'low',    label: 'Low',    hint: 'Short tasks' },
-                      { key: 'medium', label: 'Medium', hint: 'Balanced' },
-                      { key: 'high',   label: 'High',   hint: 'Deep work' },
-                    ].map(e => (
+                    {[{ key: 'low', label: 'Low', hint: 'Short tasks' }, { key: 'medium', label: 'Medium', hint: 'Balanced' }, { key: 'high', label: 'High', hint: 'Deep work' }].map(e => (
                       <button key={e.key} type="button" onClick={() => updateInput('energy', e.key)}
-                        className={cn(
-                          'flex flex-col items-start rounded-xl border px-3 py-2 text-left transition',
-                          inputs.energy === e.key
-                            ? 'border-violet-500/40 bg-violet-500/15 text-violet-100'
-                            : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]'
-                        )}>
+                        className={cn('flex flex-col items-start rounded-xl border px-3 py-2 text-left transition',
+                          inputs.energy === e.key ? 'border-violet-500/40 bg-violet-500/15 text-violet-100' : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]')}>
                         <span className="text-xs font-semibold">{e.label}</span>
                         <span className="text-[10px] text-zinc-500">{e.hint}</span>
                       </button>
                     ))}
                   </div>
                 </Field>
-
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <button onClick={generate}
-                    className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-violet-400">
+                  <button onClick={generate} className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-violet-400">
                     {missions.length ? 'Update plan' : "Generate today's plan"}
                   </button>
                   {missions.length > 0 && (
-                    <button onClick={regenerate}
-                      className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5">
-                      Regenerate
-                    </button>
+                    <button onClick={regenerate} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5">Regenerate</button>
                   )}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Missions */}
           {missions.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1321,40 +1227,21 @@
                 {missions.map(mission => {
                   const meta = MISSION_TYPE_META[mission.type] || MISSION_TYPE_META['quick-revision'];
                   return (
-                    <div key={mission.id} className={cn(
-                      'flex items-start gap-3 rounded-xl border p-3 transition',
-                      mission.done
-                        ? 'border-emerald-500/20 bg-emerald-500/[0.04]'
-                        : 'border-white/10 bg-white/[0.02] hover:border-white/20'
-                    )}>
-                      <button onClick={() => toggleMission(mission.id)}
-                        aria-pressed={mission.done} aria-label={mission.done ? 'Mark incomplete' : 'Mark complete'}
-                        className={cn(
-                          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition',
-                          mission.done
-                            ? 'border-emerald-400 bg-emerald-500 text-white'
-                            : 'border-white/25 bg-transparent hover:border-white/50'
-                        )}>
+                    <div key={mission.id} className={cn('flex items-start gap-3 rounded-xl border p-3 transition',
+                      mission.done ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-white/10 bg-white/[0.02] hover:border-white/20')}>
+                      <button onClick={() => toggleMission(mission.id)} aria-pressed={mission.done}
+                        className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition',
+                          mission.done ? 'border-emerald-400 bg-emerald-500 text-white' : 'border-white/25 bg-transparent hover:border-white/50')}>
                         {mission.done && <Icon name="check" size={13} />}
                       </button>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className={cn('text-[13px] font-semibold', mission.done ? 'text-zinc-500 line-through' : 'text-white')}>
-                            {mission.title}
-                          </h3>
+                          <h3 className={cn('text-[13px] font-semibold', mission.done ? 'text-zinc-500 line-through' : 'text-white')}>{mission.title}</h3>
                           <Badge tone={meta.tone}>{meta.label}</Badge>
-                          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-zinc-400">
-                            {mission.duration} min
-                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-zinc-400">{mission.duration} min</span>
                         </div>
-                        {mission.detail && (
-                          <p className="mt-1 text-[11px] text-zinc-500">{mission.detail}</p>
-                        )}
-                        {mission.chapterId && (
-                          <p className="mt-1 text-[10px] text-violet-400/70">
-                            Linked to chapter in tracker
-                          </p>
-                        )}
+                        {mission.detail && <p className="mt-1 text-[11px] text-zinc-500">{mission.detail}</p>}
+                        {mission.chapterId && <p className="mt-1 text-[10px] text-violet-400/70">Linked to chapter in tracker</p>}
                       </div>
                     </div>
                   );
@@ -1363,7 +1250,6 @@
             </div>
           )}
 
-          {/* Progress report */}
           {missions.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <div className="flex items-start justify-between gap-3">
@@ -1371,53 +1257,29 @@
                   <h2 className="text-sm font-semibold text-white">Daily progress report</h2>
                   <p className="text-[11px] text-zinc-500">Save a snapshot of today's plan with your reflection.</p>
                 </div>
-                {dayPlan && dayPlan.report && (
-                  <Badge tone="green">Saved {formatDate(dayPlan.report.savedAt)}</Badge>
-                )}
+                {dayPlan && dayPlan.report && <Badge tone="green">Saved {formatDate(dayPlan.report.savedAt)}</Badge>}
               </div>
-
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl bg-white/[0.03] p-2.5">
-                  <p className="text-lg font-bold text-white">{doneCount}/{missions.length}</p>
-                  <p className="text-[10px] text-zinc-600">Missions</p>
-                </div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5">
-                  <p className="text-lg font-bold text-white">{totalMin}m</p>
-                  <p className="text-[10px] text-zinc-600">Minutes studied</p>
-                </div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5">
-                  <p className="text-lg font-bold text-white">{Math.round(progressPct)}%</p>
-                  <p className="text-[10px] text-zinc-600">Completion</p>
-                </div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5">
-                  <p className="text-lg font-bold text-white">{missions.length - doneCount}</p>
-                  <p className="text-[10px] text-zinc-600">Remaining</p>
-                </div>
+                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{doneCount}/{missions.length}</p><p className="text-[10px] text-zinc-600">Missions</p></div>
+                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{totalMin}m</p><p className="text-[10px] text-zinc-600">Minutes studied</p></div>
+                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{Math.round(progressPct)}%</p><p className="text-[10px] text-zinc-600">Completion</p></div>
+                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{missions.length - doneCount}</p><p className="text-[10px] text-zinc-600">Remaining</p></div>
               </div>
-
               <div className="mt-3">
                 <Field label="Reflection for today">
-                  <textarea rows={3} value={reflection} onChange={e => setReflection(e.target.value)}
-                    className={inputClass}
+                  <textarea rows={3} value={reflection} onChange={e => setReflection(e.target.value)} className={inputClass}
                     placeholder="What went well? What was difficult? What will you do tomorrow?" />
                 </Field>
               </div>
-
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button onClick={saveReport}
-                  className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">
-                  Save progress report
-                </button>
+                <button onClick={saveReport} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">Save progress report</button>
                 <p className="text-[10px] text-zinc-500">
-                  {doneCount === missions.length
-                    ? "You finished all missions — great work!"
-                    : `Keep going, ${missions.length - doneCount} mission${missions.length - doneCount === 1 ? '' : 's'} left today.`}
+                  {doneCount === missions.length ? "You finished all missions — great work!" : `Keep going, ${missions.length - doneCount} mission${missions.length - doneCount === 1 ? '' : 's'} left today.`}
                 </p>
               </div>
             </div>
           )}
 
-          {/* Recent plans */}
           {recentDays.length > 0 && (
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <h2 className="mb-3 text-sm font-semibold text-white">Recent plans</h2>
@@ -1431,14 +1293,9 @@
                       <Icon name="calendar" size={14} className="text-zinc-500" />
                       <div className="min-w-0 flex-1">
                         <p className="text-[12px] font-medium text-zinc-200">{formatDate(date)}</p>
-                        <p className="text-[10px] text-zinc-600">
-                          {done}/{total} missions · {p.missions.filter(m => m.done).reduce((s, m) => s + m.duration, 0)} min
-                          {p.report ? ' · report saved' : ''}
-                        </p>
+                        <p className="text-[10px] text-zinc-600">{done}/{total} missions · {p.missions.filter(m => m.done).reduce((s, m) => s + m.duration, 0)} min{p.report ? ' · report saved' : ''}</p>
                       </div>
-                      <div className="w-20">
-                        <ProgressBar value={total ? (done / total) * 100 : 0} height="h-1" />
-                      </div>
+                      <div className="w-20"><ProgressBar value={total ? (done / total) * 100 : 0} height="h-1" /></div>
                     </div>
                   );
                 })}
@@ -1471,18 +1328,10 @@
                 <p className="mt-0.5 text-[11px] text-zinc-500">{subject.short} · {chapter.group}</p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <button onClick={onMoveUp} disabled={isFirst} title="Move up" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-white/5 hover:text-zinc-300 disabled:opacity-20">
-                  <Icon name="arrowUp" size={14} />
-                </button>
-                <button onClick={onMoveDown} disabled={isLast} title="Move down" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-white/5 hover:text-zinc-300 disabled:opacity-20">
-                  <Icon name="arrowDown" size={14} />
-                </button>
-                <button onClick={onEdit} title="Edit" className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/5 hover:text-violet-300">
-                  <Icon name="edit" size={14} />
-                </button>
-                <button onClick={onDelete} title="Delete" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300">
-                  <Icon name="trash" size={14} />
-                </button>
+                <button onClick={onMoveUp} disabled={isFirst} title="Move up" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-white/5 hover:text-zinc-300 disabled:opacity-20"><Icon name="arrowUp" size={14} /></button>
+                <button onClick={onMoveDown} disabled={isLast} title="Move down" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-white/5 hover:text-zinc-300 disabled:opacity-20"><Icon name="arrowDown" size={14} /></button>
+                <button onClick={onEdit} title="Edit" className="rounded-lg p-1.5 text-zinc-500 transition hover:bg-white/5 hover:text-violet-300"><Icon name="edit" size={14} /></button>
+                <button onClick={onDelete} title="Delete" className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-rose-500/10 hover:text-rose-300"><Icon name="trash" size={14} /></button>
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
@@ -1509,24 +1358,12 @@
                 <div>
                   <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-600">Important topics</p>
                   {chapter.topics.length ? (
-                    <ul className="list-inside list-disc space-y-0.5">
-                      {chapter.topics.map((t, i) => <li key={i}>{t}</li>)}
-                    </ul>
+                    <ul className="list-inside list-disc space-y-0.5">{chapter.topics.map((t, i) => <li key={i}>{t}</li>)}</ul>
                   ) : <p className="italic text-zinc-600">No topics added.</p>}
                 </div>
                 <div className="space-y-2">
-                  {chapter.notes && (
-                    <div>
-                      <p className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">Notes</p>
-                      <p className="whitespace-pre-wrap text-zinc-400">{chapter.notes}</p>
-                    </div>
-                  )}
-                  {chapter.mistakes && (
-                    <div>
-                      <p className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">Mistakes</p>
-                      <p className="whitespace-pre-wrap text-rose-300/80">{chapter.mistakes}</p>
-                    </div>
-                  )}
+                  {chapter.notes && <div><p className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">Notes</p><p className="whitespace-pre-wrap text-zinc-400">{chapter.notes}</p></div>}
+                  {chapter.mistakes && <div><p className="mb-0.5 text-[10px] uppercase tracking-wider text-zinc-600">Mistakes</p><p className="whitespace-pre-wrap text-rose-300/80">{chapter.mistakes}</p></div>}
                 </div>
               </div>
             </div>
@@ -1572,8 +1409,7 @@
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="relative flex-1">
                 <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-600" />
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search chapters or topics…" className={cn(inputClass, 'pl-9')} />
+                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search chapters or topics…" className={cn(inputClass, 'pl-9')} />
               </div>
               <div className="flex flex-wrap gap-2">
                 <select value={subjectFilter} onChange={e => { setSubjectFilter(e.target.value); setGroupFilter('all'); }} className={cn(inputClass, 'w-auto min-w-[130px]')}>
@@ -1665,17 +1501,12 @@
                 {form.topics.map((topic, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <input value={topic} onChange={e => { const copy = [...form.topics]; copy[i] = e.target.value; set('topics', copy); }} className={inputClass} />
-                    <button onClick={() => set('topics', form.topics.filter((_, j) => j !== i))} className="rounded-lg p-2 text-zinc-600 hover:bg-rose-500/10 hover:text-rose-300">
-                      <Icon name="trash" size={14} />
-                    </button>
+                    <button onClick={() => set('topics', form.topics.filter((_, j) => j !== i))} className="rounded-lg p-2 text-zinc-600 hover:bg-rose-500/10 hover:text-rose-300"><Icon name="trash" size={14} /></button>
                   </div>
                 ))}
                 <div className="flex gap-2">
-                  <input value={newTopic} onChange={e => setNewTopic(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTopic())}
-                    placeholder="Add a topic…" className={inputClass} />
-                  <button onClick={addTopic} className="shrink-0 rounded-xl border border-white/10 px-3 text-sm text-violet-300 hover:bg-white/5">
-                    <Icon name="plus" size={16} />
-                  </button>
+                  <input value={newTopic} onChange={e => setNewTopic(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTopic())} placeholder="Add a topic…" className={inputClass} />
+                  <button onClick={addTopic} className="shrink-0 rounded-xl border border-white/10 px-3 text-sm text-violet-300 hover:bg-white/5"><Icon name="plus" size={16} /></button>
                 </div>
               </div>
             </Field>
@@ -1707,9 +1538,7 @@
                 {form.revisionHistory.map(entry => (
                   <div key={entry.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-xs">
                     <div><span className="font-medium text-zinc-300">{formatDate(entry.date)}</span><span className="ml-2 text-zinc-500">{entry.note}</span></div>
-                    <button onClick={() => set('revisionHistory', form.revisionHistory.filter(e => e.id !== entry.id))} className="text-zinc-600 hover:text-rose-300">
-                      <Icon name="x" size={13} />
-                    </button>
+                    <button onClick={() => set('revisionHistory', form.revisionHistory.filter(e => e.id !== entry.id))} className="text-zinc-600 hover:text-rose-300"><Icon name="x" size={13} /></button>
                   </div>
                 ))}
               </div>
@@ -1721,9 +1550,7 @@
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
               <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:bg-white/5">Cancel</button>
-              <button onClick={handleSave} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">
-                {isNew ? 'Add chapter' : 'Save changes'}
-              </button>
+              <button onClick={handleSave} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">{isNew ? 'Add chapter' : 'Save changes'}</button>
             </div>
           </div>
         </Modal>
@@ -1749,9 +1576,7 @@
           {rec ? (
             <div className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 to-ink-850 p-5 shadow-glow">
               <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300">
-                  <Icon name="target" size={20} />
-                </div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300"><Icon name="target" size={20} /></div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-semibold text-white">{rec.chapter.name}</h2>
@@ -1759,9 +1584,7 @@
                     {rec.chapter.weightage === 3 && <Badge tone="rose">High weightage</Badge>}
                   </div>
                   <p className="text-xs text-zinc-400">{SUBJECT_MAP[rec.chapter.subjectId].name} · {rec.chapter.group}</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {rec.reasons.map((r, i) => <Badge key={i} tone="amber">{r}</Badge>)}
-                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">{rec.reasons.map((r, i) => <Badge key={i} tone="amber">{r}</Badge>)}</div>
                   {rec.manual && state.mission?.note && <p className="mt-2 text-xs text-violet-200/80">Note: {state.mission.note}</p>}
                 </div>
               </div>
@@ -1787,10 +1610,7 @@
                 <input value={note} onChange={e => setNote(e.target.value)} className={inputClass} />
               </Field>
             </div>
-            <button onClick={setManual} disabled={!manualId}
-              className="mt-3 rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:bg-violet-400 disabled:opacity-40">
-              Set mission
-            </button>
+            <button onClick={setManual} disabled={!manualId} className="mt-3 rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:bg-violet-400 disabled:opacity-40">Set mission</button>
           </div>
         </div>
       );
@@ -1814,9 +1634,7 @@
                 return (
                   <div key={ch.id} className={cn('rounded-2xl border p-4 transition', ch.mistakesResolved ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-rose-500/20 bg-rose-500/[0.04]')}>
                     <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: subject.accent + '18', color: subject.accent }}>
-                        <Icon name={subject.icon} size={14} />
-                      </div>
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: subject.accent + '18', color: subject.accent }}><Icon name={subject.icon} size={14} /></div>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-[13px] font-semibold text-white">{ch.name}</h3>
@@ -1824,9 +1642,7 @@
                         </div>
                         <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">{ch.mistakes}</p>
                         <div className="mt-2 flex gap-2">
-                          <button onClick={() => onToggleResolved(ch.id)} className="text-[11px] font-medium text-violet-300 hover:text-violet-200">
-                            {ch.mistakesResolved ? 'Mark as open' : 'Mark resolved'}
-                          </button>
+                          <button onClick={() => onToggleResolved(ch.id)} className="text-[11px] font-medium text-violet-300 hover:text-violet-200">{ch.mistakesResolved ? 'Mark as open' : 'Mark resolved'}</button>
                           <button onClick={() => onEdit(ch)} className="text-[11px] font-medium text-zinc-500 hover:text-zinc-300">Edit</button>
                         </div>
                       </div>
@@ -1861,9 +1677,7 @@
                   const subject = SUBJECT_MAP[entry.subjectId];
                   return (
                     <div key={entry.id} className="flex items-center gap-3 px-3 py-3">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: subject.accent + '18', color: subject.accent }}>
-                        <Icon name={subject.icon} size={13} />
-                      </div>
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: subject.accent + '18', color: subject.accent }}><Icon name={subject.icon} size={13} /></div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[12px] font-medium text-zinc-200">{entry.chapterName}</p>
                         <p className="text-[10px] text-zinc-600">{subject.short} · {formatDate(entry.date)}</p>
@@ -1879,10 +1693,13 @@
       );
     }
 
-    function Settings({ state, setState, onReset }) {
+    function Settings({ state, setState, onReset, syncConfig, setSyncConfig, syncStatus, setSyncStatus, onManualSync }) {
       const [importError, setImportError] = useState('');
       const fileRef = useRef(null);
       const [confirmReset, setConfirmReset] = useState(false);
+      const [urlDraft, setUrlDraft] = useState(syncConfig.url || '');
+      const [keyDraft, setKeyDraft] = useState(syncConfig.key || '');
+
       const handleImport = (file) => {
         if (!file) return;
         const reader = new FileReader();
@@ -1899,24 +1716,85 @@
         };
         reader.readAsText(file);
       };
+
+      const connectSync = () => {
+        if (!urlDraft.trim()) return alert('Paste the Google Apps Script Web App URL first.');
+        const next = { url: urlDraft.trim(), key: keyDraft.trim(), enabled: true, lastSync: null };
+        setSyncConfig(next);
+        saveSyncConfig(next);
+        onManualSync(next);
+      };
+
+      const disconnectSync = () => {
+        const next = { url: '', key: '', enabled: false, lastSync: null };
+        setSyncConfig(next);
+        saveSyncConfig(next);
+        setSyncStatus('idle');
+      };
+
       const streakDates = state.streak.studyDates || [];
       const last30 = lastNDates(30);
+
       return (
         <div className="space-y-5 animate-in">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-violet-400/80">Settings</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Data & preferences</h1>
-            <p className="text-sm text-zinc-500">Everything is stored locally in your browser.</p>
+            <p className="text-sm text-zinc-500">Everything is stored locally in your browser, with optional Google Sheets sync.</p>
           </div>
+
+          {/* Cloud Sync */}
           <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300">
-                <Icon name="flame" size={20} />
+              <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', syncConfig.enabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-500/10 text-zinc-400')}>
+                <Icon name={syncConfig.enabled ? 'cloud' : 'cloudOff'} size={20} />
               </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Study streak</p>
-                <p className="text-xs text-zinc-500">Automatically updated when you toggle a status.</p>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-white">Cloud Sync</p>
+                <p className="text-xs text-zinc-500">
+                  {syncConfig.enabled
+                    ? syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error — check URL and key' : `Connected · last sync ${syncConfig.lastSync ? formatDateTime(syncConfig.lastSync) : 'never'}`
+                    : 'Sync your progress across phone and laptop using Google Sheets.'}
+                </p>
               </div>
+              {syncConfig.enabled && <Badge tone="green">Active</Badge>}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Field label="Web App URL" hint="Ends with /exec — from Apps Script → Deploy → Web app.">
+                <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" className={inputClass} />
+              </Field>
+              <Field label="Sync Key" hint="Must match SYNC_KEY in your Apps Script.">
+                <input value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="mycbse2027" className={inputClass} />
+              </Field>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={connectSync} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">
+                {syncConfig.enabled ? 'Reconnect & Sync' : 'Connect & Sync'}
+              </button>
+              {syncConfig.enabled && (
+                <>
+                  <button onClick={() => onManualSync(syncConfig)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5">Sync now</button>
+                  <button onClick={disconnectSync} className="rounded-xl border border-rose-500/20 px-4 py-2 text-sm text-rose-300 hover:bg-rose-500/10">Disconnect</button>
+                </>
+              )}
+            </div>
+
+            <details className="mt-4 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-[11px] text-zinc-500">
+              <summary className="cursor-pointer font-medium text-zinc-400">How to set up (1–2 steps)</summary>
+              <ol className="mt-2 list-inside list-decimal space-y-1">
+                <li>Google Sheet → Extensions → Apps Script → paste the provided script → Deploy as Web app (<strong>Execute as: Me</strong>, <strong>Who has access: Anyone</strong>) → copy the URL.</li>
+                <li>Paste the URL and the same sync key above → click <strong>Connect & Sync</strong>.</li>
+              </ol>
+            </details>
+          </div>
+
+          {/* Streak */}
+          <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300"><Icon name="flame" size={20} /></div>
+              <div><p className="text-sm font-semibold text-white">Study streak</p><p className="text-xs text-zinc-500">Automatically updated when you toggle a status.</p></div>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-white/[0.03] p-3"><p className="text-xl font-bold text-white">{state.streak.current}</p><p className="text-[10px] text-zinc-600">Current</p></div>
@@ -1933,6 +1811,8 @@
               </div>
             </div>
           </div>
+
+          {/* Export / Import */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300"><Icon name="download" size={18} /></div>
@@ -1949,11 +1829,14 @@
               {importError && <p className="mt-2 text-[11px] text-rose-400">{importError}</p>}
             </div>
           </div>
+
+          {/* Reset */}
           <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.03] p-5">
             <h3 className="text-sm font-semibold text-rose-200">Reset all progress</h3>
             <p className="mt-1 text-xs text-zinc-500">This removes all statuses, notes, planner data and streaks, and restores the original syllabus.</p>
             <button onClick={() => setConfirmReset(true)} className="mt-3 rounded-xl bg-rose-500/90 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-400">Reset tracker</button>
           </div>
+
           {confirmReset && (
             <Modal open onClose={() => setConfirmReset(false)} title="Reset all progress?">
               <p className="text-sm text-zinc-400">This cannot be undone. All chapter statuses, notes, planner data and streaks will be cleared.</p>
@@ -1980,14 +1863,96 @@
       const [groupFilter, setGroupFilter] = useState('all');
       const [searchQuery, setSearchQuery] = useState('');
       const [editingChapter, setEditingChapter] = useState(null);
+      const [syncConfig, setSyncConfig] = useState(loadSyncConfig);
+      const [syncStatus, setSyncStatus] = useState('idle');
+      const syncTimerRef = useRef(null);
+      const syncConfigRef = useRef(syncConfig);
 
+      useEffect(() => { syncConfigRef.current = syncConfig; }, [syncConfig]);
+
+      // Persist local state
       useEffect(() => { saveState(state); }, [state]);
+
+      // Pull remote on first load if sync enabled
+      useEffect(() => {
+        const cfg = syncConfigRef.current;
+        if (!cfg.enabled || !cfg.url) return;
+        let cancelled = false;
+        (async () => {
+          setSyncStatus('syncing');
+          try {
+            const query = cfg.key ? '?key=' + encodeURIComponent(cfg.key) : '';
+            const remote = await jsonpGet(cfg.url + query);
+            if (cancelled) return;
+            if (remote && remote.state) {
+              const localTime = new Date(state.lastModified || 0).getTime();
+              const remoteTime = new Date(remote.state.lastModified || remote.updatedAt || 0).getTime();
+              if (remoteTime > localTime) {
+                setState(remote.state);
+              }
+            }
+            setSyncStatus('synced');
+            const updated = { ...cfg, lastSync: new Date().toISOString() };
+            setSyncConfig(updated);
+            saveSyncConfig(updated);
+          } catch (err) {
+            if (!cancelled) setSyncStatus('error');
+          }
+        })();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line
+      }, []);
+
+      // Debounced push whenever state changes
+      useEffect(() => {
+        const cfg = syncConfigRef.current;
+        if (!cfg.enabled || !cfg.url) return;
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(async () => {
+          setSyncStatus('syncing');
+          try {
+            const payload = { ...state, lastModified: new Date().toISOString() };
+            await cloudPost(cfg, payload);
+            setSyncStatus('synced');
+            const updated = { ...cfg, lastSync: new Date().toISOString() };
+            setSyncConfig(updated);
+            saveSyncConfig(updated);
+          } catch (err) {
+            setSyncStatus('error');
+          }
+        }, 2500);
+        return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+        // eslint-disable-next-line
+      }, [state]);
+
+      const manualSync = async (cfg = syncConfig) => {
+        if (!cfg.url) return;
+        setSyncStatus('syncing');
+        try {
+          const query = cfg.key ? '?key=' + encodeURIComponent(cfg.key) : '';
+          const remote = await jsonpGet(cfg.url + query);
+          if (remote && remote.state) {
+            const localTime = new Date(state.lastModified || 0).getTime();
+            const remoteTime = new Date(remote.state.lastModified || remote.updatedAt || 0).getTime();
+            if (remoteTime > localTime) setState(remote.state);
+          }
+          const payload = { ...state, lastModified: new Date().toISOString() };
+          await cloudPost(cfg, payload);
+          setSyncStatus('synced');
+          const updated = { ...cfg, lastSync: new Date().toISOString() };
+          setSyncConfig(updated);
+          saveSyncConfig(updated);
+        } catch (err) {
+          setSyncStatus('error');
+        }
+      };
 
       const chapters = state.chapters;
 
       const updateChapter = useCallback((id, patch) => {
         setState(prev => ({
           ...prev,
+          lastModified: new Date().toISOString(),
           chapters: prev.chapters.map(c => c.id === id ? { ...c, ...patch, lastUpdated: new Date().toISOString() } : c),
         }));
       }, []);
@@ -1997,7 +1962,7 @@
           const chapters = prev.chapters.map(c => c.id !== chapterId ? c : {
             ...c, status: { ...c.status, [key]: !c.status[key] }, lastUpdated: new Date().toISOString(),
           });
-          return { ...prev, chapters, streak: bumpStreak(prev.streak) };
+          return { ...prev, lastModified: new Date().toISOString(), chapters, streak: bumpStreak(prev.streak) };
         });
       }, []);
 
@@ -2011,6 +1976,7 @@
           if (!swapWith) return prev;
           return {
             ...prev,
+            lastModified: new Date().toISOString(),
             chapters: prev.chapters.map(c => {
               if (c.id === chapter.id) return { ...c, order: swapWith.order };
               if (c.id === swapWith.id) return { ...c, order: chapter.order };
@@ -2023,16 +1989,28 @@
       const saveChapter = (form) => {
         setState(prev => {
           const exists = prev.chapters.some(c => c.id === form.id);
-          if (exists) return { ...prev, chapters: prev.chapters.map(c => c.id === form.id ? { ...c, ...form, lastUpdated: new Date().toISOString() } : c) };
+          if (exists) return {
+            ...prev,
+            lastModified: new Date().toISOString(),
+            chapters: prev.chapters.map(c => c.id === form.id ? { ...c, ...form, lastUpdated: new Date().toISOString() } : c),
+          };
           const maxOrder = prev.chapters.filter(c => c.subjectId === form.subjectId).reduce((max, c) => Math.max(max, c.order), -1);
-          return { ...prev, chapters: [...prev.chapters, { ...form, id: uid(), order: maxOrder + 1, lastUpdated: new Date().toISOString() }] };
+          return {
+            ...prev,
+            lastModified: new Date().toISOString(),
+            chapters: [...prev.chapters, { ...form, id: uid(), order: maxOrder + 1, lastUpdated: new Date().toISOString() }],
+          };
         });
         setEditingChapter(null);
       };
 
       const deleteChapter = (chapter) => {
         if (!window.confirm(`Delete "${chapter.name}"? This cannot be undone.`)) return;
-        setState(prev => ({ ...prev, chapters: prev.chapters.filter(c => c.id !== chapter.id) }));
+        setState(prev => ({
+          ...prev,
+          lastModified: new Date().toISOString(),
+          chapters: prev.chapters.filter(c => c.id !== chapter.id),
+        }));
       };
 
       const resetAll = () => {
@@ -2070,7 +2048,7 @@
           case 'mission':   return <NextMission state={state} chapters={chapters} setState={setState} />;
           case 'mistakes':  return <MistakeTracker chapters={chapters} onToggleResolved={id => updateChapter(id, { mistakesResolved: !chapters.find(c => c.id === id)?.mistakesResolved })} onEdit={ch => setEditingChapter(ch)} />;
           case 'revisions': return <RevisionLog chapters={chapters} />;
-          case 'settings':  return <Settings state={state} setState={setState} onReset={resetAll} />;
+          case 'settings':  return <Settings state={state} setState={setState} onReset={resetAll} syncConfig={syncConfig} setSyncConfig={setSyncConfig} syncStatus={syncStatus} setSyncStatus={setSyncStatus} onManualSync={manualSync} />;
           default: return null;
         }
       };
@@ -2079,27 +2057,19 @@
         <div className="min-h-screen bg-ink-950">
           <Sidebar state={state} view={view} setView={setView}
             collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
-            mobileOpen={mobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} />
+            mobileOpen={mobileSidebarOpen} setMobileOpen={setMobileSidebarOpen}
+            syncConfig={syncConfig} syncStatus={syncStatus} />
           <div className={cn('transition-all duration-300', sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64')}>
             <div className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-ink-950/80 px-4 py-3 backdrop-blur lg:hidden">
-              <button onClick={() => setMobileSidebarOpen(true)} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5">
-                <Icon name="menu" size={20} />
-              </button>
-              <div className="flex items-center gap-2">
-                <Icon name="target" size={16} className="text-violet-400" />
-                <span className="text-sm font-semibold text-white">CBSE 10 Tracker</span>
-              </div>
+              <button onClick={() => setMobileSidebarOpen(true)} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5"><Icon name="menu" size={20} /></button>
+              <div className="flex items-center gap-2"><Icon name="target" size={16} className="text-violet-400" /><span className="text-sm font-semibold text-white">CBSE 10 Tracker</span></div>
               <div className="flex items-center gap-1 rounded-full bg-white/[0.04] px-2 py-1 text-[11px] text-zinc-400">
                 <Icon name="flame" size={12} className="text-orange-400" /> {state.streak.current}
               </div>
             </div>
-            <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-              {renderView()}
-            </main>
+            <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">{renderView()}</main>
           </div>
-          {editingChapter && (
-            <ChapterModal chapter={editingChapter} onClose={() => setEditingChapter(null)} onSave={saveChapter} />
-          )}
+          {editingChapter && <ChapterModal chapter={editingChapter} onClose={() => setEditingChapter(null)} onSave={saveChapter} />}
         </div>
       );
     }
