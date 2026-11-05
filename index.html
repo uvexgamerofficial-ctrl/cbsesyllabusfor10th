@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0a0a0d" />
-  <title>CBSE 10 Tracker — Syllabus, Planner, Sync & Exam Readiness</title>
+  <title>CBSE 10 Tracker — Syllabus & Exam Readiness</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -36,6 +36,8 @@
     .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); }
     textarea { resize: vertical; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { animation: spin .8s linear infinite; }
   </style>
 
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -45,6 +47,51 @@
 
 <body class="bg-ink-950 text-zinc-200 font-sans antialiased">
   <div id="root"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       FIREBASE BOOTSTRAP — replace firebaseConfig with yours
+  ═══════════════════════════════════════════════════════════ -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+      getRedirectResult, onAuthStateChanged, signOut
+    } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js';
+    import {
+      getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+
+    /* ⚠️ REPLACE these with your Firebase project config */
+    const firebaseConfig = {
+      apiKey: "PASTE_YOUR_API_KEY",
+      authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
+      projectId: "PASTE_YOUR_PROJECT_ID",
+      storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
+      messagingSenderId: "PASTE_YOUR_SENDER_ID",
+      appId: "PASTE_YOUR_APP_ID"
+    };
+
+    window.FB_CONFIGURED = !firebaseConfig.apiKey.startsWith('PASTE_');
+
+    if (window.FB_CONFIGURED) {
+      try {
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        window.FB = {
+          auth, db,
+          GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+          getRedirectResult, onAuthStateChanged, signOut,
+          doc, getDoc, setDoc, onSnapshot, serverTimestamp
+        };
+      } catch (e) {
+        console.error('Firebase init failed:', e);
+        window.FB_ERROR = e.message;
+      }
+    }
+    window.FB_READY = true;
+    window.dispatchEvent(new Event('fb-ready'));
+  </script>
 
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback, useRef } = React;
@@ -361,120 +408,9 @@
     }
 
     /* ============================================================
-       3b. STUDY PLANNER — RULE-BASED MISSION GENERATOR
+       4. STORAGE (local cache only — cloud is source of truth)
     ============================================================ */
-    const MISSION_TYPE_META = {
-      homework:       { label: 'Homework',         tone: 'amber',   icon: 'clipboard' },
-      pending:        { label: 'Pending',          tone: 'rose',    icon: 'alert' },
-      study:          { label: 'Study',            tone: 'violet',  icon: 'book' },
-      revise:         { label: 'Revise',           tone: 'cyan',    icon: 'refresh' },
-      notes:          { label: 'Notes',            tone: 'violet',  icon: 'edit' },
-      practice:       { label: 'Practice',         tone: 'green',   icon: 'target' },
-      test:           { label: 'Chapter test',     tone: 'green',   icon: 'checkCircle' },
-      'mistake-review':{ label: 'Mistake review',  tone: 'rose',    icon: 'alert' },
-      'quick-revision':{ label: 'Quick revision',  tone: 'default', icon: 'clock' },
-    };
-
-    function missionTypeForChapter(ch) {
-      if (!ch.status.studied) return 'study';
-      if (!ch.status.revised) return 'revise';
-      if (!ch.status.copy) return 'notes';
-      if (!ch.status.examReady) return 'practice';
-      return 'test';
-    }
-    function missionTitleForChapter(ch) {
-      const base = ch.name;
-      const type = missionTypeForChapter(ch);
-      if (type === 'study') return `Study: ${base}`;
-      if (type === 'revise') return `Revise: ${base}`;
-      if (type === 'notes') return `Complete notes: ${base}`;
-      if (type === 'practice') return `Practice problems: ${base}`;
-      return `Chapter test: ${base}`;
-    }
-
-    function generateMissions(inputs, chapters, nextMissionChapter) {
-      const { availableMinutes, energy, schoolTopics, homework, pendingTasks, homeStudy } = inputs;
-      let targetCount = 3;
-      if (availableMinutes >= 90) targetCount = 4;
-      if (availableMinutes >= 150) targetCount = 5;
-      const baseDuration = energy === 'low' ? 15 : energy === 'medium' ? 25 : 40;
-      const maxTotal = Math.max(30, availableMinutes * 0.92);
-      const missions = [];
-      const usedChapters = new Set();
-      const homeLower = (homeStudy || '').toLowerCase();
-
-      if (homework && homework.trim()) {
-        homework.split(/[,\n;]/).map(t => t.trim()).filter(Boolean).slice(0, 2).forEach(task => {
-          if (missions.length >= targetCount) return;
-          missions.push({ type: 'homework', title: 'Complete homework', detail: task, duration: Math.min(baseDuration, Math.floor(availableMinutes * 0.3)) });
-        });
-      }
-      if (pendingTasks && pendingTasks.trim()) {
-        pendingTasks.split(/[,\n;]/).map(t => t.trim()).filter(Boolean).slice(0, 2).forEach(task => {
-          if (missions.length >= targetCount) return;
-          missions.push({ type: 'pending', title: 'Clear a pending task', detail: task, duration: baseDuration });
-        });
-      }
-      if (schoolTopics && schoolTopics.trim()) {
-        const sLower = schoolTopics.toLowerCase();
-        chapters.forEach(ch => {
-          if (missions.length >= targetCount || usedChapters.has(ch.id)) return;
-          const matchesName = sLower.includes(ch.name.toLowerCase());
-          const matchesTopic = ch.topics.some(t => t && sLower.includes(t.toLowerCase()));
-          if (matchesName || matchesTopic) {
-            if (homeLower && (homeLower.includes(ch.name.toLowerCase()) || ch.topics.some(t => t && homeLower.includes(t.toLowerCase())))) return;
-            usedChapters.add(ch.id);
-            missions.push({ type: missionTypeForChapter(ch), title: missionTitleForChapter(ch), detail: 'Covered in school today', duration: baseDuration + 5, chapterId: ch.id });
-          }
-        });
-      }
-      if (nextMissionChapter && !usedChapters.has(nextMissionChapter.id) && missions.length < targetCount) {
-        usedChapters.add(nextMissionChapter.id);
-        missions.push({ type: missionTypeForChapter(nextMissionChapter), title: missionTitleForChapter(nextMissionChapter), detail: 'Priority chapter from your tracker', duration: baseDuration + 10, chapterId: nextMissionChapter.id });
-      }
-      chapters.filter(c => c.mistakes && !c.mistakesResolved && !usedChapters.has(c.id)).slice(0, 2).forEach(c => {
-        if (missions.length >= targetCount) return;
-        usedChapters.add(c.id);
-        missions.push({ type: 'mistake-review', title: `Review mistakes: ${c.name}`, detail: 'Unresolved weak areas', duration: Math.min(baseDuration, 20), chapterId: c.id });
-      });
-      chapters.filter(c => c.status.studied && !c.status.revised && !usedChapters.has(c.id)).sort((a, b) => b.weightage - a.weightage).slice(0, 2).forEach(c => {
-        if (missions.length >= targetCount) return;
-        usedChapters.add(c.id);
-        missions.push({ type: 'revise', title: `Revise: ${c.name}`, detail: 'Studied once, needs a revision pass', duration: baseDuration, chapterId: c.id });
-      });
-      chapters.filter(c => !c.status.studied && !usedChapters.has(c.id)).sort((a, b) => b.weightage - a.weightage).slice(0, 2).forEach(c => {
-        if (missions.length >= targetCount) return;
-        usedChapters.add(c.id);
-        missions.push({ type: 'study', title: `Study: ${c.name}`, detail: 'Not yet started', duration: baseDuration + 5, chapterId: c.id });
-      });
-      const genericPool = [
-        { type: 'quick-revision', title: "Quick revision of today's topics", detail: 'Reinforce what you learned', duration: 15 },
-        { type: 'practice',        title: 'Solve 5 previous-year questions',  detail: 'Exam pattern practice',      duration: 20 },
-        { type: 'notes',           title: 'Update a pending notebook',        detail: 'Keep your copy up to date',   duration: 15 },
-        { type: 'quick-revision',  title: 'Read ahead for tomorrow',          detail: "Prepare for tomorrow's class", duration: 15 },
-      ];
-      for (const g of genericPool) { if (missions.length >= targetCount) break; missions.push({ ...g }); }
-      while (missions.length < 3) missions.push({ type: 'quick-revision', title: 'Quick mixed revision', detail: 'Review your notes', duration: 15 });
-
-      const finalMissions = missions.slice(0, targetCount);
-      const totalDur = finalMissions.reduce((s, m) => s + m.duration, 0);
-      if (totalDur > maxTotal) {
-        const scale = maxTotal / totalDur;
-        finalMissions.forEach(m => { m.duration = Math.max(10, Math.round(m.duration * scale)); });
-      }
-      return finalMissions.map((m, i) => ({ ...m, id: uid(), order: i, done: false, notes: '' }));
-    }
-
-    function getTodayPlan(state) {
-      return state.planner ? state.planner[toLocalDateString()] || null : null;
-    }
-
-    /* ============================================================
-       4. STORAGE
-    ============================================================ */
-    const STORAGE_KEY = 'cbse10-tracker-single-v2';
-    const SYNC_CONFIG_KEY = 'cbse10-sync-config';
-
+    const STORAGE_KEY = 'cbse10-tracker-single-v3';
     const emptyStatus = () => ({ studied: false, copy: false, revised: false, examReady: false, complete: false });
 
     function createInitialState() {
@@ -499,7 +435,6 @@
         chapters,
         streak: { current: 0, longest: 0, lastStudyDate: null, studyDates: [] },
         mission: null,
-        planner: {},
       };
     }
 
@@ -564,14 +499,12 @@
               note: typeof candidate.mission.note === 'string' ? candidate.mission.note : '',
             }
           : null,
-        planner: (candidate.planner && typeof candidate.planner === 'object') ? candidate.planner : {},
       };
     }
 
     function loadState() {
       try {
-        let raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) raw = localStorage.getItem('cbse10-tracker-single-v1');
+        const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return createInitialState();
         return normalizeState(JSON.parse(raw));
       } catch { return createInitialState(); }
@@ -590,43 +523,11 @@
       URL.revokeObjectURL(url);
     }
 
-    /* ============================================================
-       4b. CLOUD SYNC HELPERS
-    ============================================================ */
-    function loadSyncConfig() {
-      try {
-        return JSON.parse(localStorage.getItem(SYNC_CONFIG_KEY)) || { url: '', key: '', enabled: false, lastSync: null };
-      } catch { return { url: '', key: '', enabled: false, lastSync: null }; }
-    }
-    function saveSyncConfig(config) {
-      try { localStorage.setItem(SYNC_CONFIG_KEY, JSON.stringify(config)); } catch {}
-    }
-
-    function jsonpGet(url) {
-      return new Promise((resolve, reject) => {
-        const cb = 'jsonp_cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-        const script = document.createElement('script');
-        const timer = setTimeout(() => { cleanup(); reject(new Error('Sync timeout')); }, 20000);
-        function cleanup() {
-          clearTimeout(timer);
-          delete window[cb];
-          if (script.parentNode) script.remove();
-        }
-        window[cb] = (data) => { cleanup(); resolve(data); };
-        script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cb + '&t=' + Date.now();
-        script.onerror = () => { cleanup(); reject(new Error('Sync network error')); };
-        document.body.appendChild(script);
-      });
-    }
-
-    async function cloudPost(config, state) {
-      const body = JSON.stringify({ key: config.key, state });
-      await fetch(config.url, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body,
-      });
+    /* Compare state without the volatile timestamp */
+    function stableJson(s) {
+      const copy = { ...s };
+      delete copy.lastModified;
+      return JSON.stringify(copy);
     }
 
     /* ============================================================
@@ -666,15 +567,26 @@
       language: "M5 8l6 6 M4 14l6-6 2-3 M2 5h12 M7 2h1 M22 22l-5-10-5 10 M14 18h6",
       scroll: "M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4",
       monitor: "M8 2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-4 M8 22h8 M12 18v4",
-      sun: "M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0 M12 2v2 M12 20v2 M4.93 4.93l1.41 1.41 M17.66 17.66l1.41 1.41 M2 12h2 M20 12h2 M6.34 17.66l-1.41 1.41 M19.07 4.93l-1.41 1.41",
       cloud: "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z",
-      cloudOff: "M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3 M1 1l22 22",
+      logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
+      user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
     };
 
     function Icon({ name, size = 18, className = '' }) {
       return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
           <path d={ICON_PATHS[name] || ICON_PATHS.circle} />
+        </svg>
+      );
+    }
+
+    function GoogleIcon({ size = 18 }) {
+      return (
+        <svg width={size} height={size} viewBox="0 0 48 48">
+          <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+          <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+          <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+          <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/>
         </svg>
       );
     }
@@ -793,16 +705,104 @@
     const inputClass = 'w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20';
 
     /* ============================================================
-       7. APP COMPONENTS
+       7. AUTH SCREENS
     ============================================================ */
-    function Sidebar({ state, view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen, syncConfig, syncStatus }) {
+    function LoadingScreen() {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-ink-950">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 spinner" />
+            <p className="text-xs text-zinc-500">Loading your tracker…</p>
+          </div>
+        </div>
+      );
+    }
+
+    function AuthScreen({ onSignIn }) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4">
+          <div className="w-full max-w-sm animate-in">
+            <div className="mb-6 flex flex-col items-center text-center">
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/15 text-violet-300 shadow-glow">
+                <Icon name="target" size={28} />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight text-white">CBSE 10 Tracker</h1>
+              <p className="mt-1 text-sm text-zinc-500">Syllabus · Revision · Exam readiness</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-glow">
+              <h2 className="text-sm font-semibold text-white">Sign in to sync your progress</h2>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+                Use the same Google account on your phone and laptop. Your chapter statuses, notes and streaks stay in sync automatically.
+              </p>
+              <button
+                onClick={onSignIn}
+                className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100"
+              >
+                <GoogleIcon size={18} />
+                Sign in with Google
+              </button>
+              <p className="mt-4 text-[10px] leading-relaxed text-zinc-600">
+                Your data is stored in your private Firestore document. Only your signed-in account can read or write it.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function SetupScreen({ error }) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4 py-10">
+          <div className="w-full max-w-2xl animate-in">
+            <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-6">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300">
+                  <Icon name="alert" size={20} />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white">Firebase setup required</h1>
+                  <p className="mt-1 text-sm text-zinc-400">
+                    This tracker now uses Firebase for real Google sign-in and cross-device sync. Add your Firebase config to enable it.
+                  </p>
+                  {error && <p className="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-ink-850 p-5 text-sm text-zinc-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Setup steps</p>
+              <ol className="list-inside list-decimal space-y-2 text-xs leading-relaxed">
+                <li>Create a Firebase project at <span className="text-violet-300">console.firebase.google.com</span>.</li>
+                <li>Enable <strong className="text-zinc-300">Authentication → Google</strong>.</li>
+                <li>Create a <strong className="text-zinc-300">Firestore Database</strong> and paste the security rules shown below.</li>
+                <li>Copy your web app's <code className="rounded bg-black/30 px-1">firebaseConfig</code> into the HTML where it says <code className="rounded bg-black/30 px-1">PASTE_YOUR_API_KEY</code> etc.</li>
+                <li>Add your site domain (e.g. <code className="rounded bg-black/30 px-1">yourname.github.io</code>) under <strong className="text-zinc-300">Authentication → Settings → Authorized domains</strong>.</li>
+              </ol>
+
+              <p className="pt-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Firestore security rules</p>
+              <pre className="overflow-x-auto rounded-xl border border-white/10 bg-black/30 p-3 text-[11px] leading-relaxed text-emerald-200">{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}`}</pre>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    /* ============================================================
+       8. SIDEBAR (with user profile)
+    ============================================================ */
+    function Sidebar({ state, view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen, user, onSignOut, syncStatus }) {
       const chapters = state.chapters;
       const stats = overallStats(chapters);
-      const todayPlan = getTodayPlan(state);
 
       const nav = [
         { view: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-        { view: 'planner',   label: 'Study Planner', icon: 'sun', badge: todayPlan ? `${todayPlan.missions.filter(m => m.done).length}/${todayPlan.missions.length}` : null },
         { view: 'chapters',  label: 'All Chapters', icon: 'book' },
         { view: 'mission',   label: 'Next Mission', icon: 'target' },
         { view: 'mistakes',  label: 'Mistake Tracker', icon: 'alert' },
@@ -811,6 +811,7 @@
       ];
 
       const syncTone = syncStatus === 'synced' ? 'text-emerald-400' : syncStatus === 'syncing' ? 'text-amber-400' : syncStatus === 'error' ? 'text-rose-400' : 'text-zinc-600';
+      const syncLabel = syncStatus === 'synced' ? 'Synced' : syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error' : 'Connected';
 
       const content = (
         <div className="flex h-full flex-col">
@@ -821,7 +822,7 @@
             {!collapsed && (
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold tracking-tight text-white">CBSE 10 Tracker</p>
-                <p className="text-[10px] uppercase tracking-wider text-zinc-500">Syllabus · Planner · Exams</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-500">Syllabus · Exams</p>
               </div>
             )}
           </div>
@@ -849,9 +850,6 @@
                 )}>
                 <Icon name={item.icon} size={17} />
                 {!collapsed && <span className="flex-1">{item.label}</span>}
-                {!collapsed && item.badge && (
-                  <span className="rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">{item.badge}</span>
-                )}
               </button>
             ))}
 
@@ -880,13 +878,31 @@
             })}
           </nav>
 
-          <div className="space-y-2 border-t border-white/10 p-3">
-            <div className={cn('flex items-center gap-2 px-1 text-[10px]', collapsed && 'justify-center')}>
-              <Icon name={syncConfig.enabled ? 'cloud' : 'cloudOff'} size={12} className={syncTone} />
-              {!collapsed && <span className={syncTone}>{syncConfig.enabled ? (syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error' : 'Cloud synced') : 'Local only'}</span>}
+          {/* User profile */}
+          <div className="border-t border-white/10 p-3">
+            <div className={cn('flex items-center gap-2', collapsed && 'justify-center')}>
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" className="h-8 w-8 shrink-0 rounded-full border border-white/10" />
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-500/20 text-[11px] font-bold text-violet-200">
+                  {(user.displayName || user.email || '?')[0].toUpperCase()}
+                </div>
+              )}
+              {!collapsed && (
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] font-medium text-white">{user.displayName || 'Student'}</p>
+                  <p className={cn('flex items-center gap-1 truncate text-[10px]', syncTone)}>
+                    <Icon name="cloud" size={10} /> {syncLabel}
+                  </p>
+                </div>
+              )}
+              <button onClick={onSignOut} title="Sign out"
+                className="shrink-0 rounded-lg p-1.5 text-zinc-500 transition hover:bg-rose-500/10 hover:text-rose-300">
+                <Icon name="logout" size={15} />
+              </button>
             </div>
             <button onClick={() => setCollapsed(!collapsed)}
-              className="hidden w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-[11px] text-zinc-500 transition hover:bg-white/[0.04] lg:flex">
+              className="mt-2 hidden w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-[11px] text-zinc-500 transition hover:bg-white/[0.04] lg:flex">
               <Icon name={collapsed ? 'chevronRight' : 'chevronLeft'} size={14} />
               {!collapsed && 'Collapse'}
             </button>
@@ -910,9 +926,11 @@
       );
     }
 
+    /* ============================================================
+       9. DASHBOARD
+    ============================================================ */
     function Dashboard({ state, chapters, setView }) {
       const stats = overallStats(chapters);
-      const todayPlan = getTodayPlan(state);
       const recent = [...chapters]
         .sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime())
         .slice(0, 6);
@@ -940,32 +958,6 @@
               </div>
             </div>
           </div>
-
-          {todayPlan && todayPlan.missions && todayPlan.missions.length > 0 && (
-            <button onClick={() => setView('planner')}
-              className="group flex w-full items-center gap-4 rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/[0.08] to-ink-850 p-4 text-left transition hover:border-violet-500/40">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-violet-300">
-                <Icon name="sun" size={20} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-white">Today's Plan</p>
-                  <Badge tone="violet">
-                    {todayPlan.missions.filter(m => m.done).length}/{todayPlan.missions.length} done
-                  </Badge>
-                </div>
-                <div className="mt-2">
-                  <ProgressBar value={(todayPlan.missions.filter(m => m.done).length / todayPlan.missions.length) * 100} height="h-1.5" />
-                </div>
-                <p className="mt-1 text-[11px] text-zinc-500">
-                  {todayPlan.missions.filter(m => !m.done).length === 0
-                    ? 'All missions complete — log your reflection!'
-                    : `Next up: ${todayPlan.missions.find(m => !m.done)?.title || ''}`}
-                </p>
-              </div>
-              <Icon name="chevronRight" size={16} className="text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-violet-300" />
-            </button>
-          )}
 
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-ink-850 to-ink-900 p-5 shadow-glow lg:col-span-1">
@@ -1077,237 +1069,7 @@
     }
 
     /* ============================================================
-       7b. STUDY PLANNER VIEW
-    ============================================================ */
-    function Planner({ state, setState, chapters }) {
-      const today = toLocalDateString();
-      const dayPlan = state.planner ? state.planner[today] : null;
-      const nextRec = useMemo(() => getMissionRecommendation(state, chapters), [state, chapters]);
-
-      const [showForm, setShowForm] = useState(!dayPlan);
-      const [inputs, setInputs] = useState(() => (dayPlan && dayPlan.inputs) || {
-        schoolTopics: '', homework: '', homeStudy: '', pendingTasks: '', availableMinutes: 90, energy: 'medium',
-      });
-      const [reflection, setReflection] = useState(dayPlan && dayPlan.report ? dayPlan.report.reflection : '');
-
-      const updateInput = (key, value) => setInputs(prev => ({ ...prev, [key]: value }));
-
-      const savePlan = (plan) => {
-        setState(prev => ({ ...prev, planner: { ...(prev.planner || {}), [today]: plan } }));
-      };
-
-      const generate = () => {
-        const missions = generateMissions(inputs, chapters, nextRec ? nextRec.chapter : null);
-        savePlan({ inputs, missions, report: null, savedAt: new Date().toISOString() });
-        setShowForm(false);
-      };
-      const regenerate = () => {
-        if (!window.confirm("Regenerate today's plan? Your current mission progress will be cleared.")) return;
-        const missions = generateMissions(inputs, chapters, nextRec ? nextRec.chapter : null);
-        savePlan({ inputs, missions, report: null, savedAt: new Date().toISOString() });
-      };
-      const toggleMission = (id) => {
-        if (!dayPlan) return;
-        const updatedMissions = dayPlan.missions.map(m => m.id === id ? { ...m, done: !m.done } : m);
-        savePlan({ ...dayPlan, missions: updatedMissions });
-      };
-      const saveReport = () => {
-        if (!dayPlan) return;
-        const completed = dayPlan.missions.filter(m => m.done);
-        const report = {
-          completedMissions: completed.length,
-          totalMissions: dayPlan.missions.length,
-          minutesStudied: completed.reduce((s, m) => s + m.duration, 0),
-          reflection: reflection.trim(),
-          savedAt: new Date().toISOString(),
-        };
-        savePlan({ ...dayPlan, report });
-      };
-
-      const missions = dayPlan ? dayPlan.missions : [];
-      const doneCount = missions.filter(m => m.done).length;
-      const totalMin = missions.filter(m => m.done).reduce((s, m) => s + m.duration, 0);
-      const progressPct = missions.length ? (doneCount / missions.length) * 100 : 0;
-
-      const recentDays = Object.keys(state.planner || {})
-        .filter(d => d !== today)
-        .sort()
-        .reverse()
-        .slice(0, 5);
-
-      return (
-        <div className="space-y-5 animate-in">
-          <div className="rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/10 to-ink-850 p-5">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/20 text-violet-300">
-                <Icon name="sun" size={22} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] uppercase tracking-wider text-violet-300/80">
-                  {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-                </p>
-                <h1 className="mt-1 text-2xl font-bold text-white">Study Planner</h1>
-                <p className="text-sm text-zinc-400">
-                  {missions.length
-                    ? `${doneCount} of ${missions.length} missions done · ${totalMin} min of focused study`
-                    : 'Tell the planner about your day — it will build 3–5 clear missions.'}
-                </p>
-              </div>
-            </div>
-            {missions.length > 0 && <div className="mt-4"><ProgressBar value={progressPct} height="h-2" /></div>}
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
-            <button onClick={() => setShowForm(s => !s)} className="flex w-full items-center justify-between text-left">
-              <div>
-                <h2 className="text-sm font-semibold text-white">Today's inputs</h2>
-                <p className="text-[11px] text-zinc-500">School topics, homework, energy and available time.</p>
-              </div>
-              <Icon name={showForm ? 'chevronLeft' : 'chevronRight'} size={16} className="text-zinc-500" />
-            </button>
-            {showForm && (
-              <div className="mt-4 space-y-3">
-                <Field label="What was taught in school today?">
-                  <textarea rows={2} value={inputs.schoolTopics} onChange={e => updateInput('schoolTopics', e.target.value)} className={inputClass} placeholder="e.g. Quadratic Equations, Acids and Bases, Federalism…" />
-                </Field>
-                <Field label="Homework assigned">
-                  <textarea rows={2} value={inputs.homework} onChange={e => updateInput('homework', e.target.value)} className={inputClass} placeholder="One task per line" />
-                </Field>
-                <Field label="Already studied at home today (optional)">
-                  <textarea rows={2} value={inputs.homeStudy} onChange={e => updateInput('homeStudy', e.target.value)} className={inputClass} placeholder="e.g. Revised Trigonometry formulas" />
-                </Field>
-                <Field label="Pending tasks from previous days">
-                  <textarea rows={2} value={inputs.pendingTasks} onChange={e => updateInput('pendingTasks', e.target.value)} className={inputClass} placeholder="One task per line" />
-                </Field>
-                <Field label="Available study time">
-                  <div className="flex flex-wrap gap-2">
-                    {[30, 45, 60, 90, 120, 180].map(min => (
-                      <button key={min} type="button" onClick={() => updateInput('availableMinutes', min)}
-                        className={cn('rounded-xl border px-3 py-2 text-xs font-medium transition',
-                          inputs.availableMinutes === min ? 'border-violet-500/40 bg-violet-500/15 text-violet-200' : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]')}>
-                        {min >= 60 ? `${min / 60}h` : `${min}m`}
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-                <Field label="Energy level">
-                  <div className="flex flex-wrap gap-2">
-                    {[{ key: 'low', label: 'Low', hint: 'Short tasks' }, { key: 'medium', label: 'Medium', hint: 'Balanced' }, { key: 'high', label: 'High', hint: 'Deep work' }].map(e => (
-                      <button key={e.key} type="button" onClick={() => updateInput('energy', e.key)}
-                        className={cn('flex flex-col items-start rounded-xl border px-3 py-2 text-left transition',
-                          inputs.energy === e.key ? 'border-violet-500/40 bg-violet-500/15 text-violet-100' : 'border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.05]')}>
-                        <span className="text-xs font-semibold">{e.label}</span>
-                        <span className="text-[10px] text-zinc-500">{e.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </Field>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button onClick={generate} className="rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-violet-400">
-                    {missions.length ? 'Update plan' : "Generate today's plan"}
-                  </button>
-                  {missions.length > 0 && (
-                    <button onClick={regenerate} className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-zinc-300 hover:bg-white/5">Regenerate</button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {missions.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-sm font-semibold text-white">Today's missions</h2>
-                  <p className="text-[11px] text-zinc-500">Tap to mark a mission complete. Each mission is independent.</p>
-                </div>
-                <Badge tone="violet">{doneCount}/{missions.length} done</Badge>
-              </div>
-              <div className="space-y-2">
-                {missions.map(mission => {
-                  const meta = MISSION_TYPE_META[mission.type] || MISSION_TYPE_META['quick-revision'];
-                  return (
-                    <div key={mission.id} className={cn('flex items-start gap-3 rounded-xl border p-3 transition',
-                      mission.done ? 'border-emerald-500/20 bg-emerald-500/[0.04]' : 'border-white/10 bg-white/[0.02] hover:border-white/20')}>
-                      <button onClick={() => toggleMission(mission.id)} aria-pressed={mission.done}
-                        className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition',
-                          mission.done ? 'border-emerald-400 bg-emerald-500 text-white' : 'border-white/25 bg-transparent hover:border-white/50')}>
-                        {mission.done && <Icon name="check" size={13} />}
-                      </button>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className={cn('text-[13px] font-semibold', mission.done ? 'text-zinc-500 line-through' : 'text-white')}>{mission.title}</h3>
-                          <Badge tone={meta.tone}>{meta.label}</Badge>
-                          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-zinc-400">{mission.duration} min</span>
-                        </div>
-                        {mission.detail && <p className="mt-1 text-[11px] text-zinc-500">{mission.detail}</p>}
-                        {mission.chapterId && <p className="mt-1 text-[10px] text-violet-400/70">Linked to chapter in tracker</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {missions.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold text-white">Daily progress report</h2>
-                  <p className="text-[11px] text-zinc-500">Save a snapshot of today's plan with your reflection.</p>
-                </div>
-                {dayPlan && dayPlan.report && <Badge tone="green">Saved {formatDate(dayPlan.report.savedAt)}</Badge>}
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{doneCount}/{missions.length}</p><p className="text-[10px] text-zinc-600">Missions</p></div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{totalMin}m</p><p className="text-[10px] text-zinc-600">Minutes studied</p></div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{Math.round(progressPct)}%</p><p className="text-[10px] text-zinc-600">Completion</p></div>
-                <div className="rounded-xl bg-white/[0.03] p-2.5"><p className="text-lg font-bold text-white">{missions.length - doneCount}</p><p className="text-[10px] text-zinc-600">Remaining</p></div>
-              </div>
-              <div className="mt-3">
-                <Field label="Reflection for today">
-                  <textarea rows={3} value={reflection} onChange={e => setReflection(e.target.value)} className={inputClass}
-                    placeholder="What went well? What was difficult? What will you do tomorrow?" />
-                </Field>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button onClick={saveReport} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">Save progress report</button>
-                <p className="text-[10px] text-zinc-500">
-                  {doneCount === missions.length ? "You finished all missions — great work!" : `Keep going, ${missions.length - doneCount} mission${missions.length - doneCount === 1 ? '' : 's'} left today.`}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {recentDays.length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
-              <h2 className="mb-3 text-sm font-semibold text-white">Recent plans</h2>
-              <div className="space-y-2">
-                {recentDays.map(date => {
-                  const p = state.planner[date];
-                  const done = p.missions.filter(m => m.done).length;
-                  const total = p.missions.length;
-                  return (
-                    <div key={date} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2">
-                      <Icon name="calendar" size={14} className="text-zinc-500" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-zinc-200">{formatDate(date)}</p>
-                        <p className="text-[10px] text-zinc-600">{done}/{total} missions · {p.missions.filter(m => m.done).reduce((s, m) => s + m.duration, 0)} min{p.report ? ' · report saved' : ''}</p>
-                      </div>
-                      <div className="w-20"><ProgressBar value={total ? (done / total) * 100 : 0} height="h-1" /></div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    /* ============================================================
-       7c. CHAPTERS & OTHER VIEWS
+       10. CHAPTERS VIEW + CARD + MODAL
     ============================================================ */
     function ChapterCard({ chapter, subject, onToggleStatus, onEdit, onDelete, onMoveUp, onMoveDown, isFirst, isLast }) {
       const [expanded, setExpanded] = useState(false);
@@ -1557,15 +1319,18 @@
       );
     }
 
+    /* ============================================================
+       11. NEXT MISSION / MISTAKES / REVISIONS
+    ============================================================ */
     function NextMission({ state, chapters, setState }) {
       const rec = useMemo(() => getMissionRecommendation(state, chapters), [state, chapters]);
       const [manualId, setManualId] = useState('');
       const [note, setNote] = useState('');
       const setManual = () => {
         if (!manualId) return;
-        setState(prev => ({ ...prev, mission: { chapterId: manualId, createdAt: new Date().toISOString(), note } }));
+        setState(prev => ({ ...prev, lastModified: new Date().toISOString(), mission: { chapterId: manualId, createdAt: new Date().toISOString(), note } }));
       };
-      const clearMission = () => setState(prev => ({ ...prev, mission: null }));
+      const clearMission = () => setState(prev => ({ ...prev, lastModified: new Date().toISOString(), mission: null }));
       return (
         <div className="space-y-5 animate-in">
           <div>
@@ -1693,12 +1458,13 @@
       );
     }
 
-    function Settings({ state, setState, onReset, syncConfig, setSyncConfig, syncStatus, setSyncStatus, onManualSync }) {
+    /* ============================================================
+       12. SETTINGS (with Account section)
+    ============================================================ */
+    function Settings({ state, setState, onReset, user, onSignOut }) {
       const [importError, setImportError] = useState('');
       const fileRef = useRef(null);
       const [confirmReset, setConfirmReset] = useState(false);
-      const [urlDraft, setUrlDraft] = useState(syncConfig.url || '');
-      const [keyDraft, setKeyDraft] = useState(syncConfig.key || '');
 
       const handleImport = (file) => {
         if (!file) return;
@@ -1717,21 +1483,6 @@
         reader.readAsText(file);
       };
 
-      const connectSync = () => {
-        if (!urlDraft.trim()) return alert('Paste the Google Apps Script Web App URL first.');
-        const next = { url: urlDraft.trim(), key: keyDraft.trim(), enabled: true, lastSync: null };
-        setSyncConfig(next);
-        saveSyncConfig(next);
-        onManualSync(next);
-      };
-
-      const disconnectSync = () => {
-        const next = { url: '', key: '', enabled: false, lastSync: null };
-        setSyncConfig(next);
-        saveSyncConfig(next);
-        setSyncStatus('idle');
-      };
-
       const streakDates = state.streak.studyDates || [];
       const last30 = lastNDates(30);
 
@@ -1739,55 +1490,32 @@
         <div className="space-y-5 animate-in">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] text-violet-400/80">Settings</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Data & preferences</h1>
-            <p className="text-sm text-zinc-500">Everything is stored locally in your browser, with optional Google Sheets sync.</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Data & account</h1>
+            <p className="text-sm text-zinc-500">Your progress is saved to your Google account and synced across devices.</p>
           </div>
 
-          {/* Cloud Sync */}
+          {/* Account */}
           <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
-            <div className="flex items-center gap-3">
-              <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl', syncConfig.enabled ? 'bg-emerald-500/10 text-emerald-300' : 'bg-zinc-500/10 text-zinc-400')}>
-                <Icon name={syncConfig.enabled ? 'cloud' : 'cloudOff'} size={20} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-white">Cloud Sync</p>
-                <p className="text-xs text-zinc-500">
-                  {syncConfig.enabled
-                    ? syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error — check URL and key' : `Connected · last sync ${syncConfig.lastSync ? formatDateTime(syncConfig.lastSync) : 'never'}`
-                    : 'Sync your progress across phone and laptop using Google Sheets.'}
-                </p>
-              </div>
-              {syncConfig.enabled && <Badge tone="green">Active</Badge>}
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <Field label="Web App URL" hint="Ends with /exec — from Apps Script → Deploy → Web app.">
-                <input value={urlDraft} onChange={e => setUrlDraft(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" className={inputClass} />
-              </Field>
-              <Field label="Sync Key" hint="Must match SYNC_KEY in your Apps Script.">
-                <input value={keyDraft} onChange={e => setKeyDraft(e.target.value)} placeholder="mycbse2027" className={inputClass} />
-              </Field>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button onClick={connectSync} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">
-                {syncConfig.enabled ? 'Reconnect & Sync' : 'Connect & Sync'}
-              </button>
-              {syncConfig.enabled && (
-                <>
-                  <button onClick={() => onManualSync(syncConfig)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5">Sync now</button>
-                  <button onClick={disconnectSync} className="rounded-xl border border-rose-500/20 px-4 py-2 text-sm text-rose-300 hover:bg-rose-500/10">Disconnect</button>
-                </>
+            <div className="flex flex-wrap items-center gap-3">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full border border-white/10" />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-500/20 text-sm font-bold text-violet-200">
+                  {(user.displayName || user.email || '?')[0].toUpperCase()}
+                </div>
               )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-white">{user.displayName || 'Student'}</p>
+                <p className="truncate text-xs text-zinc-500">{user.email}</p>
+              </div>
+              <button onClick={onSignOut}
+                className="rounded-xl border border-rose-500/20 px-4 py-2 text-sm text-rose-300 hover:bg-rose-500/10">
+                Sign out
+              </button>
             </div>
-
-            <details className="mt-4 rounded-xl border border-white/5 bg-white/[0.02] p-3 text-[11px] text-zinc-500">
-              <summary className="cursor-pointer font-medium text-zinc-400">How to set up (1–2 steps)</summary>
-              <ol className="mt-2 list-inside list-decimal space-y-1">
-                <li>Google Sheet → Extensions → Apps Script → paste the provided script → Deploy as Web app (<strong>Execute as: Me</strong>, <strong>Who has access: Anyone</strong>) → copy the URL.</li>
-                <li>Paste the URL and the same sync key above → click <strong>Connect & Sync</strong>.</li>
-              </ol>
-            </details>
+            <p className="mt-3 text-[11px] leading-relaxed text-zinc-500">
+              Signing out clears this device's local cache. Your data stays safe in your private Firestore document.
+            </p>
           </div>
 
           {/* Streak */}
@@ -1817,7 +1545,7 @@
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300"><Icon name="download" size={18} /></div>
               <h3 className="mt-3 text-sm font-semibold text-white">Export progress</h3>
-              <p className="mt-1 text-xs text-zinc-500">Download chapters, statuses, notes, planner history and streaks as JSON.</p>
+              <p className="mt-1 text-xs text-zinc-500">Download chapters, statuses, notes and streaks as JSON.</p>
               <button onClick={() => exportState(state)} className="mt-3 w-full rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow hover:bg-violet-400">Export JSON</button>
             </div>
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
@@ -1833,13 +1561,13 @@
           {/* Reset */}
           <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.03] p-5">
             <h3 className="text-sm font-semibold text-rose-200">Reset all progress</h3>
-            <p className="mt-1 text-xs text-zinc-500">This removes all statuses, notes, planner data and streaks, and restores the original syllabus.</p>
+            <p className="mt-1 text-xs text-zinc-500">This removes all statuses, notes and streaks, restores the original syllabus, and overwrites the cloud copy.</p>
             <button onClick={() => setConfirmReset(true)} className="mt-3 rounded-xl bg-rose-500/90 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-400">Reset tracker</button>
           </div>
 
           {confirmReset && (
             <Modal open onClose={() => setConfirmReset(false)} title="Reset all progress?">
-              <p className="text-sm text-zinc-400">This cannot be undone. All chapter statuses, notes, planner data and streaks will be cleared.</p>
+              <p className="text-sm text-zinc-400">This cannot be undone. All chapter statuses, notes and streaks will be cleared, and the reset will sync to your other devices.</p>
               <div className="mt-4 flex justify-end gap-2">
                 <button onClick={() => setConfirmReset(false)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-zinc-400 hover:bg-white/5">Cancel</button>
                 <button onClick={() => { onReset(); setConfirmReset(false); }} className="rounded-xl bg-rose-500 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-400">Yes, reset</button>
@@ -1851,9 +1579,9 @@
     }
 
     /* ============================================================
-       8. MAIN APP
+       13. TRACKER (authenticated app + Firestore sync)
     ============================================================ */
-    function App() {
+    function Tracker({ fb, user, onSignOut }) {
       const [state, setState] = useState(loadState);
       const [view, setView] = useState('dashboard');
       const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -1863,92 +1591,104 @@
       const [groupFilter, setGroupFilter] = useState('all');
       const [searchQuery, setSearchQuery] = useState('');
       const [editingChapter, setEditingChapter] = useState(null);
-      const [syncConfig, setSyncConfig] = useState(loadSyncConfig);
       const [syncStatus, setSyncStatus] = useState('idle');
-      const syncTimerRef = useRef(null);
-      const syncConfigRef = useRef(syncConfig);
 
-      useEffect(() => { syncConfigRef.current = syncConfig; }, [syncConfig]);
+      const stateRef = useRef(state);
+      useEffect(() => { stateRef.current = state; }, [state]);
 
-      // Persist local state
+      // Persist local cache
       useEffect(() => { saveState(state); }, [state]);
 
-      // Pull remote on first load if sync enabled
+      const lastSyncedJsonRef = useRef('');
+      const syncReadyRef = useRef(false);
+
+      /* ── Real-time Firestore sync ───────────────────────────── */
       useEffect(() => {
-        const cfg = syncConfigRef.current;
-        if (!cfg.enabled || !cfg.url) return;
+        if (!fb || !user) {
+          syncReadyRef.current = false;
+          setSyncStatus('idle');
+          return;
+        }
+        const ref = fb.doc(fb.db, 'users', user.uid);
+        let unsub = null;
         let cancelled = false;
+        syncReadyRef.current = false;
+        setSyncStatus('syncing');
+
         (async () => {
-          setSyncStatus('syncing');
           try {
-            const query = cfg.key ? '?key=' + encodeURIComponent(cfg.key) : '';
-            const remote = await jsonpGet(cfg.url + query);
+            const snap = await fb.getDoc(ref);
             if (cancelled) return;
-            if (remote && remote.state) {
-              const localTime = new Date(state.lastModified || 0).getTime();
-              const remoteTime = new Date(remote.state.lastModified || remote.updatedAt || 0).getTime();
-              if (remoteTime > localTime) {
-                setState(remote.state);
+
+            if (snap.exists()) {
+              const remote = normalizeState(snap.data().state);
+              const localTime = new Date(stateRef.current.lastModified || 0).getTime();
+              const remoteTime = new Date(remote.lastModified || 0).getTime();
+              if (remoteTime >= localTime) {
+                lastSyncedJsonRef.current = stableJson(remote);
+                setState(remote);
+              } else {
+                lastSyncedJsonRef.current = stableJson(stateRef.current);
+                await fb.setDoc(ref, {
+                  state: stateRef.current,
+                  updatedAt: fb.serverTimestamp(),
+                });
               }
+            } else {
+              lastSyncedJsonRef.current = stableJson(stateRef.current);
+              await fb.setDoc(ref, {
+                state: stateRef.current,
+                updatedAt: fb.serverTimestamp(),
+              });
             }
+            if (cancelled) return;
+            syncReadyRef.current = true;
             setSyncStatus('synced');
-            const updated = { ...cfg, lastSync: new Date().toISOString() };
-            setSyncConfig(updated);
-            saveSyncConfig(updated);
-          } catch (err) {
+
+            unsub = fb.onSnapshot(ref, (s) => {
+              if (!s.exists()) return;
+              const remote = normalizeState(s.data().state);
+              const json = stableJson(remote);
+              if (json !== lastSyncedJsonRef.current) {
+                lastSyncedJsonRef.current = json;
+                setState(remote);
+                setSyncStatus('synced');
+              }
+            });
+          } catch (e) {
+            console.error('Sync init failed:', e);
             if (!cancelled) setSyncStatus('error');
           }
         })();
-        return () => { cancelled = true; };
-        // eslint-disable-next-line
-      }, []);
 
-      // Debounced push whenever state changes
+        return () => { cancelled = true; if (unsub) unsub(); };
+      }, [fb, user]);
+
+      /* ── Debounced push on local changes ────────────────────── */
       useEffect(() => {
-        const cfg = syncConfigRef.current;
-        if (!cfg.enabled || !cfg.url) return;
-        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
-        syncTimerRef.current = setTimeout(async () => {
-          setSyncStatus('syncing');
+        if (!fb || !user || !syncReadyRef.current) return;
+        const json = stableJson(state);
+        if (json === lastSyncedJsonRef.current) return;
+
+        const t = setTimeout(async () => {
           try {
-            const payload = { ...state, lastModified: new Date().toISOString() };
-            await cloudPost(cfg, payload);
+            setSyncStatus('syncing');
+            lastSyncedJsonRef.current = json;
+            await fb.setDoc(fb.doc(fb.db, 'users', user.uid), {
+              state: { ...state, lastModified: new Date().toISOString() },
+              updatedAt: fb.serverTimestamp(),
+            });
             setSyncStatus('synced');
-            const updated = { ...cfg, lastSync: new Date().toISOString() };
-            setSyncConfig(updated);
-            saveSyncConfig(updated);
-          } catch (err) {
+          } catch (e) {
+            console.error('Push failed:', e);
             setSyncStatus('error');
           }
-        }, 2500);
-        return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
-        // eslint-disable-next-line
-      }, [state]);
+        }, 1200);
 
-      const manualSync = async (cfg = syncConfig) => {
-        if (!cfg.url) return;
-        setSyncStatus('syncing');
-        try {
-          const query = cfg.key ? '?key=' + encodeURIComponent(cfg.key) : '';
-          const remote = await jsonpGet(cfg.url + query);
-          if (remote && remote.state) {
-            const localTime = new Date(state.lastModified || 0).getTime();
-            const remoteTime = new Date(remote.state.lastModified || remote.updatedAt || 0).getTime();
-            if (remoteTime > localTime) setState(remote.state);
-          }
-          const payload = { ...state, lastModified: new Date().toISOString() };
-          await cloudPost(cfg, payload);
-          setSyncStatus('synced');
-          const updated = { ...cfg, lastSync: new Date().toISOString() };
-          setSyncConfig(updated);
-          saveSyncConfig(updated);
-        } catch (err) {
-          setSyncStatus('error');
-        }
-      };
+        return () => clearTimeout(t);
+      }, [state, fb, user]);
 
-      const chapters = state.chapters;
-
+      /* ── Mutations ──────────────────────────────────────────── */
       const updateChapter = useCallback((id, patch) => {
         setState(prev => ({
           ...prev,
@@ -2014,9 +1754,15 @@
       };
 
       const resetAll = () => {
-        try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem('cbse10-tracker-single-v1'); } catch {}
+        try { localStorage.removeItem(STORAGE_KEY); } catch {}
         setState(createInitialState());
         setView('dashboard');
+      };
+
+      const handleSignOut = () => {
+        try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        setState(createInitialState());
+        onSignOut();
       };
 
       const newChapter = () => {
@@ -2027,10 +1773,11 @@
         });
       };
 
+      const chapters = state.chapters;
+
       const renderView = () => {
         switch (view) {
           case 'dashboard': return <Dashboard state={state} chapters={chapters} setView={setView} />;
-          case 'planner':   return <Planner state={state} setState={setState} chapters={chapters} />;
           case 'chapters':  return (
             <ChaptersView
               chapters={chapters}
@@ -2048,7 +1795,7 @@
           case 'mission':   return <NextMission state={state} chapters={chapters} setState={setState} />;
           case 'mistakes':  return <MistakeTracker chapters={chapters} onToggleResolved={id => updateChapter(id, { mistakesResolved: !chapters.find(c => c.id === id)?.mistakesResolved })} onEdit={ch => setEditingChapter(ch)} />;
           case 'revisions': return <RevisionLog chapters={chapters} />;
-          case 'settings':  return <Settings state={state} setState={setState} onReset={resetAll} syncConfig={syncConfig} setSyncConfig={setSyncConfig} syncStatus={syncStatus} setSyncStatus={setSyncStatus} onManualSync={manualSync} />;
+          case 'settings':  return <Settings state={state} setState={setState} onReset={resetAll} user={user} onSignOut={handleSignOut} />;
           default: return null;
         }
       };
@@ -2058,7 +1805,7 @@
           <Sidebar state={state} view={view} setView={setView}
             collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed}
             mobileOpen={mobileSidebarOpen} setMobileOpen={setMobileSidebarOpen}
-            syncConfig={syncConfig} syncStatus={syncStatus} />
+            user={user} onSignOut={handleSignOut} syncStatus={syncStatus} />
           <div className={cn('transition-all duration-300', sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64')}>
             <div className="sticky top-0 z-30 flex items-center justify-between border-b border-white/10 bg-ink-950/80 px-4 py-3 backdrop-blur lg:hidden">
               <button onClick={() => setMobileSidebarOpen(true)} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5"><Icon name="menu" size={20} /></button>
@@ -2072,6 +1819,80 @@
           {editingChapter && <ChapterModal chapter={editingChapter} onClose={() => setEditingChapter(null)} onSave={saveChapter} />}
         </div>
       );
+    }
+
+    /* ============================================================
+       14. APP WRAPPER (Firebase auth gate)
+    ============================================================ */
+    function useFirebase() {
+      const [fb, setFb] = useState(null);
+      const [configured, setConfigured] = useState(false);
+      const [error, setError] = useState('');
+      const [ready, setReady] = useState(false);
+
+      useEffect(() => {
+        const sync = () => {
+          setFb(window.FB || null);
+          setConfigured(window.FB_CONFIGURED || false);
+          setError(window.FB_ERROR || '');
+          setReady(true);
+        };
+        if (window.FB_READY === true) { sync(); return; }
+        const handler = () => sync();
+        window.addEventListener('fb-ready', handler);
+        const t = setTimeout(sync, 300);
+        return () => { window.removeEventListener('fb-ready', handler); clearTimeout(t); };
+      }, []);
+
+      return { fb, configured, error, ready };
+    }
+
+    function App() {
+      const { fb, configured, error, ready } = useFirebase();
+      const [user, setUser] = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+
+      useEffect(() => {
+        if (!fb) { setAuthLoading(false); return; }
+        const unsub = fb.onAuthStateChanged(fb.auth, (u) => {
+          setUser(u);
+          setAuthLoading(false);
+        });
+        return () => unsub();
+      }, [fb]);
+
+      useEffect(() => {
+        if (!fb) return;
+        fb.getRedirectResult(fb.auth).catch(() => {});
+      }, [fb]);
+
+      const signIn = async () => {
+        if (!fb) return;
+        const provider = new fb.GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: 'select_account' });
+        try {
+          await fb.signInWithPopup(fb.auth, provider);
+        } catch (e) {
+          if (e.code === 'auth/popup-blocked' || e.code === 'auth/cancelled-popup-request' || e.code === 'auth/popup-closed-by-user') {
+            try {
+              await fb.signInWithRedirect(fb.auth, provider);
+            } catch (e2) {
+              alert(e2.message);
+            }
+          } else {
+            alert(e.message);
+          }
+        }
+      };
+
+      const signOutUser = () => { if (fb) fb.signOut(fb.auth); };
+
+      if (!ready) return <LoadingScreen />;
+      if (!configured) return <SetupScreen />;
+      if (!fb) return <SetupScreen error={error || 'Firebase could not initialize.'} />;
+      if (authLoading) return <LoadingScreen />;
+      if (!user) return <AuthScreen onSignIn={signIn} />;
+      return <Tracker fb={fb} user={user} onSignOut={signOutUser} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
