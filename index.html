@@ -49,7 +49,7 @@
   <div id="root"></div>
 
   <!-- ═══════════════════════════════════════════════════════════
-       FIREBASE BOOTSTRAP — replace firebaseConfig with yours
+       FIREBASE BOOTSTRAP — replace the values below with your own
   ═══════════════════════════════════════════════════════════ -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js';
@@ -61,24 +61,39 @@
       getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 
-    /* ⚠️ REPLACE these with your Firebase project config */
+    /* ⚠️  PASTE YOUR CONFIG HERE — replace every PASTE_… value */
     const firebaseConfig = {
-      apiKey: "PASTE_YOUR_API_KEY",
-      authDomain: "PASTE_YOUR_PROJECT.firebaseapp.com",
-      projectId: "PASTE_YOUR_PROJECT_ID",
-      storageBucket: "PASTE_YOUR_PROJECT.appspot.com",
-      messagingSenderId: "PASTE_YOUR_SENDER_ID",
-      appId: "PASTE_YOUR_APP_ID"
+      apiKey: "AIzaSyCgDqmc3rfRM-Lc-aKe49H4mjz5LA37yEE",
+  authDomain: "tracker-c3aa2.firebaseapp.com",
+  databaseURL: "https://tracker-c3aa2-default-rtdb.firebaseio.com",
+  projectId: "tracker-c3aa2",
+  storageBucket: "tracker-c3aa2.firebasestorage.app",
+  messagingSenderId: "627348216783",
+  appId: "1:627348216783:web:c7f2d9947d2185701850ba",
+  measurementId: "G-RJWBZRV0BB"
     };
 
-    window.FB_CONFIGURED = !firebaseConfig.apiKey.startsWith('PASTE_');
+    /* Robust detection: config is valid only if apiKey and projectId are real */
+    const CONFIG_OK =
+      typeof firebaseConfig.apiKey === 'string' &&
+      firebaseConfig.apiKey.length > 20 &&
+      !firebaseConfig.apiKey.includes('PASTE_') &&
+      typeof firebaseConfig.projectId === 'string' &&
+      !firebaseConfig.projectId.includes('PASTE_');
 
-    if (window.FB_CONFIGURED) {
+    window.FB_STATUS = {
+      configured: CONFIG_OK,
+      ready: false,
+      error: null,
+      sdk: null
+    };
+
+    if (CONFIG_OK) {
       try {
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        window.FB = {
+        window.FB_STATUS.sdk = {
           auth, db,
           GoogleAuthProvider, signInWithPopup, signInWithRedirect,
           getRedirectResult, onAuthStateChanged, signOut,
@@ -86,11 +101,12 @@
         };
       } catch (e) {
         console.error('Firebase init failed:', e);
-        window.FB_ERROR = e.message;
+        window.FB_STATUS.error = e.message || 'Firebase could not initialize.';
       }
     }
-    window.FB_READY = true;
-    window.dispatchEvent(new Event('fb-ready'));
+
+    window.FB_STATUS.ready = true;
+    window.dispatchEvent(new Event('fb-status'));
   </script>
 
   <script type="text/babel">
@@ -408,7 +424,7 @@
     }
 
     /* ============================================================
-       4. STORAGE (local cache only — cloud is source of truth)
+       4. LOCAL CACHE (never used as cloud replacement)
     ============================================================ */
     const STORAGE_KEY = 'cbse10-tracker-single-v3';
     const emptyStatus = () => ({ studied: false, copy: false, revised: false, examReady: false, complete: false });
@@ -502,15 +518,18 @@
       };
     }
 
-    function loadState() {
+    function loadLocal() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return createInitialState();
+        if (!raw) return null;
         return normalizeState(JSON.parse(raw));
-      } catch { return createInitialState(); }
+      } catch { return null; }
     }
-    function saveState(state) {
+    function saveLocal(state) {
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+    }
+    function clearLocal() {
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
     }
     function exportState(state) {
       const payload = { app: 'CBSE 10 Tracker', exportedAt: new Date().toISOString(), state };
@@ -523,7 +542,7 @@
       URL.revokeObjectURL(url);
     }
 
-    /* Compare state without the volatile timestamp */
+    /* Compare state without volatile timestamp */
     function stableJson(s) {
       const copy = { ...s };
       delete copy.lastModified;
@@ -568,6 +587,7 @@
       scroll: "M8 21h12a2 2 0 0 0 2-2v-2H10v2a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v3h4",
       monitor: "M8 2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2h-4 M8 22h8 M12 18v4",
       cloud: "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z",
+      cloudOff: "M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3 M1 1l22 22",
       logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
       user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
     };
@@ -705,20 +725,20 @@
     const inputClass = 'w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-zinc-200 outline-none transition placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20';
 
     /* ============================================================
-       7. AUTH SCREENS
+       7. AUTH SCREENS (Google button always visible)
     ============================================================ */
-    function LoadingScreen() {
+    function LoadingScreen({ message = 'Loading your tracker…' }) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-ink-950">
           <div className="flex flex-col items-center gap-3">
             <div className="h-8 w-8 rounded-full border-2 border-violet-500/30 border-t-violet-500 spinner" />
-            <p className="text-xs text-zinc-500">Loading your tracker…</p>
+            <p className="text-xs text-zinc-500">{message}</p>
           </div>
         </div>
       );
     }
 
-    function AuthScreen({ onSignIn }) {
+    function AuthScreen({ onSignIn, authError, signingIn }) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-ink-950 px-4">
           <div className="w-full max-w-sm animate-in">
@@ -729,18 +749,37 @@
               <h1 className="text-xl font-bold tracking-tight text-white">CBSE 10 Tracker</h1>
               <p className="mt-1 text-sm text-zinc-500">Syllabus · Revision · Exam readiness</p>
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-6 shadow-glow">
               <h2 className="text-sm font-semibold text-white">Sign in to sync your progress</h2>
               <p className="mt-1 text-xs leading-relaxed text-zinc-500">
                 Use the same Google account on your phone and laptop. Your chapter statuses, notes and streaks stay in sync automatically.
               </p>
+
+              {authError && (
+                <div className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2 text-[11px] leading-relaxed text-rose-300">
+                  {authError}
+                </div>
+              )}
+
               <button
                 onClick={onSignIn}
-                className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100"
+                disabled={signingIn}
+                className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 disabled:opacity-60"
               >
-                <GoogleIcon size={18} />
-                Sign in with Google
+                {signingIn ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-zinc-400/30 border-t-zinc-600 spinner" />
+                    Signing in…
+                  </span>
+                ) : (
+                  <>
+                    <GoogleIcon size={18} />
+                    Continue with Google
+                  </>
+                )}
               </button>
+
               <p className="mt-4 text-[10px] leading-relaxed text-zinc-600">
                 Your data is stored in your private Firestore document. Only your signed-in account can read or write it.
               </p>
@@ -760,9 +799,9 @@
                   <Icon name="alert" size={20} />
                 </div>
                 <div>
-                  <h1 className="text-lg font-bold text-white">Firebase setup required</h1>
+                  <h1 className="text-lg font-bold text-white">Firebase configuration needed</h1>
                   <p className="mt-1 text-sm text-zinc-400">
-                    This tracker now uses Firebase for real Google sign-in and cross-device sync. Add your Firebase config to enable it.
+                    This tracker uses Firebase for Google sign-in and cross-device sync. Add your Firebase config to enable it.
                   </p>
                   {error && <p className="mt-2 rounded-lg bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</p>}
                 </div>
@@ -770,13 +809,14 @@
             </div>
 
             <div className="mt-4 space-y-3 rounded-2xl border border-white/10 bg-ink-850 p-5 text-sm text-zinc-400">
-              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Setup steps</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Quick setup</p>
               <ol className="list-inside list-decimal space-y-2 text-xs leading-relaxed">
                 <li>Create a Firebase project at <span className="text-violet-300">console.firebase.google.com</span>.</li>
                 <li>Enable <strong className="text-zinc-300">Authentication → Google</strong>.</li>
-                <li>Create a <strong className="text-zinc-300">Firestore Database</strong> and paste the security rules shown below.</li>
-                <li>Copy your web app's <code className="rounded bg-black/30 px-1">firebaseConfig</code> into the HTML where it says <code className="rounded bg-black/30 px-1">PASTE_YOUR_API_KEY</code> etc.</li>
-                <li>Add your site domain (e.g. <code className="rounded bg-black/30 px-1">yourname.github.io</code>) under <strong className="text-zinc-300">Authentication → Settings → Authorized domains</strong>.</li>
+                <li>Create a <strong className="text-zinc-300">Firestore Database</strong> and paste the security rules below.</li>
+                <li>Register a <strong className="text-zinc-300">Web app</strong> and copy its <code className="rounded bg-black/30 px-1">firebaseConfig</code>.</li>
+                <li>Paste the config into <code className="rounded bg-black/30 px-1">index.html</code> where the <code className="rounded bg-black/30 px-1">PASTE_…</code> placeholders are.</li>
+                <li>Add your site domain under <strong className="text-zinc-300">Authentication → Settings → Authorized domains</strong>.</li>
               </ol>
 
               <p className="pt-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Firestore security rules</p>
@@ -795,7 +835,7 @@ service cloud.firestore {
     }
 
     /* ============================================================
-       8. SIDEBAR (with user profile)
+       8. SIDEBAR (profile + logout)
     ============================================================ */
     function Sidebar({ state, view, setView, collapsed, setCollapsed, mobileOpen, setMobileOpen, user, onSignOut, syncStatus }) {
       const chapters = state.chapters;
@@ -878,7 +918,6 @@ service cloud.firestore {
             })}
           </nav>
 
-          {/* User profile */}
           <div className="border-t border-white/10 p-3">
             <div className={cn('flex items-center gap-2', collapsed && 'justify-center')}>
               {user.photoURL ? (
@@ -1459,7 +1498,7 @@ service cloud.firestore {
     }
 
     /* ============================================================
-       12. SETTINGS (with Account section)
+       12. SETTINGS (account, export/import, reset)
     ============================================================ */
     function Settings({ state, setState, onReset, user, onSignOut }) {
       const [importError, setImportError] = useState('');
@@ -1494,7 +1533,6 @@ service cloud.firestore {
             <p className="text-sm text-zinc-500">Your progress is saved to your Google account and synced across devices.</p>
           </div>
 
-          {/* Account */}
           <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
             <div className="flex flex-wrap items-center gap-3">
               {user.photoURL ? (
@@ -1518,7 +1556,6 @@ service cloud.firestore {
             </p>
           </div>
 
-          {/* Streak */}
           <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-300"><Icon name="flame" size={20} /></div>
@@ -1540,7 +1577,6 @@ service cloud.firestore {
             </div>
           </div>
 
-          {/* Export / Import */}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-white/10 bg-ink-850 p-5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300"><Icon name="download" size={18} /></div>
@@ -1558,7 +1594,6 @@ service cloud.firestore {
             </div>
           </div>
 
-          {/* Reset */}
           <div className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.03] p-5">
             <h3 className="text-sm font-semibold text-rose-200">Reset all progress</h3>
             <p className="mt-1 text-xs text-zinc-500">This removes all statuses, notes and streaks, restores the original syllabus, and overwrites the cloud copy.</p>
@@ -1579,10 +1614,10 @@ service cloud.firestore {
     }
 
     /* ============================================================
-       13. TRACKER (authenticated app + Firestore sync)
+       13. TRACKER (authenticated app with Firestore sync)
     ============================================================ */
     function Tracker({ fb, user, onSignOut }) {
-      const [state, setState] = useState(loadState);
+      const [state, setState] = useState(() => loadLocal() || createInitialState());
       const [view, setView] = useState('dashboard');
       const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
       const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -1596,13 +1631,13 @@ service cloud.firestore {
       const stateRef = useRef(state);
       useEffect(() => { stateRef.current = state; }, [state]);
 
-      // Persist local cache
-      useEffect(() => { saveState(state); }, [state]);
-
       const lastSyncedJsonRef = useRef('');
       const syncReadyRef = useRef(false);
 
-      /* ── Real-time Firestore sync ───────────────────────────── */
+      // Local cache for faster loads — never the source of truth
+      useEffect(() => { saveLocal(state); }, [state]);
+
+      /* ── Firestore real-time sync ───────────────────────────── */
       useEffect(() => {
         if (!fb || !user) {
           syncReadyRef.current = false;
@@ -1664,7 +1699,7 @@ service cloud.firestore {
         return () => { cancelled = true; if (unsub) unsub(); };
       }, [fb, user]);
 
-      /* ── Debounced push on local changes ────────────────────── */
+      /* ── Push local changes (debounced) ─────────────────────── */
       useEffect(() => {
         if (!fb || !user || !syncReadyRef.current) return;
         const json = stableJson(state);
@@ -1754,13 +1789,13 @@ service cloud.firestore {
       };
 
       const resetAll = () => {
-        try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        clearLocal();
         setState(createInitialState());
         setView('dashboard');
       };
 
       const handleSignOut = () => {
-        try { localStorage.removeItem(STORAGE_KEY); } catch {}
+        clearLocal();
         setState(createInitialState());
         onSignOut();
       };
@@ -1822,77 +1857,100 @@ service cloud.firestore {
     }
 
     /* ============================================================
-       14. APP WRAPPER (Firebase auth gate)
+       14. APP WRAPPER (Firebase gate + auth state)
     ============================================================ */
-    function useFirebase() {
-      const [fb, setFb] = useState(null);
-      const [configured, setConfigured] = useState(false);
-      const [error, setError] = useState('');
-      const [ready, setReady] = useState(false);
-
-      useEffect(() => {
-        const sync = () => {
-          setFb(window.FB || null);
-          setConfigured(window.FB_CONFIGURED || false);
-          setError(window.FB_ERROR || '');
-          setReady(true);
-        };
-        if (window.FB_READY === true) { sync(); return; }
-        const handler = () => sync();
-        window.addEventListener('fb-ready', handler);
-        const t = setTimeout(sync, 300);
-        return () => { window.removeEventListener('fb-ready', handler); clearTimeout(t); };
-      }, []);
-
-      return { fb, configured, error, ready };
-    }
-
     function App() {
-      const { fb, configured, error, ready } = useFirebase();
+      const [fbStatus, setFbStatus] = useState(null);
       const [user, setUser] = useState(null);
       const [authLoading, setAuthLoading] = useState(true);
+      const [signingIn, setSigningIn] = useState(false);
+      const [authError, setAuthError] = useState('');
 
+      // Read the bootstrap status (retry briefly until the module script finishes)
       useEffect(() => {
-        if (!fb) { setAuthLoading(false); return; }
-        const unsub = fb.onAuthStateChanged(fb.auth, (u) => {
+        const sync = () => setFbStatus(window.FB_STATUS || null);
+        if (window.FB_STATUS && window.FB_STATUS.ready) { sync(); return; }
+        const handler = () => sync();
+        window.addEventListener('fb-status', handler);
+        const t = setTimeout(sync, 500);
+        return () => { window.removeEventListener('fb-status', handler); clearTimeout(t); };
+      }, []);
+
+      // Subscribe to auth state once the SDK is available
+      useEffect(() => {
+        if (!fbStatus || !fbStatus.sdk) {
+          setAuthLoading(false);
+          return;
+        }
+        const unsub = fbStatus.sdk.onAuthStateChanged(fbStatus.sdk.auth, (u) => {
           setUser(u);
           setAuthLoading(false);
+          setAuthError('');
         });
         return () => unsub();
-      }, [fb]);
+      }, [fbStatus]);
 
+      // Handle redirect fallback
       useEffect(() => {
-        if (!fb) return;
-        fb.getRedirectResult(fb.auth).catch(() => {});
-      }, [fb]);
+        if (!fbStatus || !fbStatus.sdk) return;
+        fbStatus.sdk.getRedirectResult(fbStatus.sdk.auth).catch(() => {});
+      }, [fbStatus]);
 
       const signIn = async () => {
-        if (!fb) return;
-        const provider = new fb.GoogleAuthProvider();
+        if (!fbStatus || !fbStatus.sdk) return;
+        const sdk = fbStatus.sdk;
+        const provider = new sdk.GoogleAuthProvider();
         provider.setCustomParameters({ prompt: 'select_account' });
+        setSigningIn(true);
+        setAuthError('');
         try {
-          await fb.signInWithPopup(fb.auth, provider);
+          await sdk.signInWithPopup(sdk.auth, provider);
         } catch (e) {
-          if (e.code === 'auth/popup-blocked' || e.code === 'auth/cancelled-popup-request' || e.code === 'auth/popup-closed-by-user') {
+          // Popup blocked → try redirect
+          if (['auth/popup-blocked', 'auth/cancelled-popup-request', 'auth/popup-closed-by-user'].includes(e.code)) {
             try {
-              await fb.signInWithRedirect(fb.auth, provider);
+              await sdk.signInWithRedirect(sdk.auth, provider);
+              return;
             } catch (e2) {
-              alert(e2.message);
+              setAuthError(e2.message || 'Redirect sign-in failed.');
             }
+          } else if (e.code === 'auth/unauthorized-domain') {
+            setAuthError('This domain is not authorised in Firebase → Authentication → Settings → Authorized domains.');
           } else {
-            alert(e.message);
+            setAuthError(e.message || 'Sign-in failed. Please try again.');
           }
+        } finally {
+          setSigningIn(false);
         }
       };
 
-      const signOutUser = () => { if (fb) fb.signOut(fb.auth); };
+      const signOutUser = () => {
+        if (fbStatus && fbStatus.sdk) fbStatus.sdk.signOut(fbStatus.sdk.auth);
+      };
 
-      if (!ready) return <LoadingScreen />;
-      if (!configured) return <SetupScreen />;
-      if (!fb) return <SetupScreen error={error || 'Firebase could not initialize.'} />;
-      if (authLoading) return <LoadingScreen />;
-      if (!user) return <AuthScreen onSignIn={signIn} />;
-      return <Tracker fb={fb} user={user} onSignOut={signOutUser} />;
+      if (!fbStatus) return <LoadingScreen message="Checking configuration…" />;
+
+      // Missing / broken config → proper setup screen
+      if (!fbStatus.configured) return <SetupScreen error={fbStatus.error} />;
+
+      // SDK failed to initialise even though config looks valid
+      if (!fbStatus.sdk) return <SetupScreen error={fbStatus.error || 'Firebase could not initialise. Check your config values.'} />;
+
+      if (authLoading) return <LoadingScreen message="Checking sign-in status…" />;
+
+      // ── Login screen with visible Google button ────────────
+      if (!user) {
+        return (
+          <AuthScreen
+            onSignIn={signIn}
+            authError={authError}
+            signingIn={signingIn}
+          />
+        );
+      }
+
+      // ── Signed-in app with cloud sync ───────────────────────
+      return <Tracker fb={fbStatus.sdk} user={user} onSignOut={signOutUser} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
