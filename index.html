@@ -1883,18 +1883,27 @@ service cloud.firestore {
       }, []);
 
       // Subscribe to auth state once the SDK is available
+      
       useEffect(() => {
-        if (!fbStatus || !fbStatus.sdk) {
-          setAuthLoading(false);
-          return;
+        // Firebase bootstrap अभी पूरा नहीं हुआ है
+        if (!fbStatus) return;
+
+        if (!fbStatus.sdk) {
+            setAuthLoading(false);
+            return;
         }
-        const unsub = fbStatus.sdk.onAuthStateChanged(fbStatus.sdk.auth, (u) => {
-          setUser(u);
-          setAuthLoading(false);
-          setAuthError('');
-        });
+
+        const unsub = fbStatus.sdk.onAuthStateChanged(
+          fbStatus.sdk.auth,
+          (u) => {
+            setUser(u);
+            setAuthLoading(false);
+            setAuthError('');
+          }
+        );
+
         return () => unsub();
-      }, [fbStatus]);
+    }, [fbStatus]);
 
       // Handle redirect fallback
       useEffect(() => {
